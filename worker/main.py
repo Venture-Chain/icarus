@@ -46,6 +46,7 @@ class IngestionWorker:
         # Run ingestion loops concurrently
         await asyncio.gather(
             self._price_loop(),
+            self._alpaca_bars_loop(),
             self._news_loop(),
             self._sentiment_loop(),
             self._social_loop(),
@@ -83,6 +84,63 @@ class IngestionWorker:
                 log.info("prices updated")
             except Exception as e:
                 log.error(f"price loop error: {e}")
+            await asyncio.sleep(300)  # 5 min
+
+    async def _alpaca_bars_loop(self):
+        """Pull intraday bars from Alpaca every 5 minutes. Free tier: IEX feed, 200 req/min."""
+        import httpx
+        import os
+
+        api_key = os.environ.get("ALPACA_API_KEY", "")
+        api_secret = os.environ.get("ALPACA_API_SECRET", "")
+        if not api_key or not api_secret:
+            log.warning("ALPACA_API_KEY/SECRET not set, Alpaca ingestion disabled")
+            return
+
+        headers = {"APCA-API-KEY-ID": api_key, "APCA-API-SECRET-KEY": api_secret}
+
+        while self._running:
+            try:
+                log.info("pulling Alpaca bars")
+                async with httpx.AsyncClient(timeout=15) as client:
+                    # Batch request: up to 200 symbols per call
+                    symbols = ",".join(self.watchlist)
+                    resp = await client.get(
+                        "https://data.alpaca.markets/v2/stocks/bars",
+                        params={
+                            "symbols": symbols,
+                            "timeframe": "5Min",
+                            "limit": 1,
+                            "feed": "iex",
+                            "sort": "desc",
+                        },
+                        headers=headers,
+                    )
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        bars = data.get("bars", {})
+                        for ticker, bar_list in bars.items():
+                            if not bar_list:
+                                continue
+                            bar = bar_list[0]
+                            await self.redis.xadd("market:prices", {
+                                "ticker": ticker,
+                                "source": "alpaca",
+                                "data": json.dumps({
+                                    "open": float(bar["o"]),
+                                    "high": float(bar["h"]),
+                                    "low": float(bar["l"]),
+                                    "close": float(bar["c"]),
+                                    "volume": int(bar["v"]),
+                                    "vwap": float(bar.get("vw", 0)),
+                                }),
+                                "timestamp": datetime.utcnow().isoformat(),
+                            })
+                        log.info(f"Alpaca bars updated: {len(bars)} tickers")
+                    else:
+                        log.warning(f"Alpaca bars HTTP {resp.status_code}")
+            except Exception as e:
+                log.error(f"Alpaca bars loop error: {e}")
             await asyncio.sleep(300)  # 5 min
 
     async def _news_loop(self):

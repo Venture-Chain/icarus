@@ -16,6 +16,8 @@ class Settings(BaseSettings):
     reddit_client_id: str = ""
     reddit_client_secret: str = ""
     reddit_user_agent: str = "icarus/1.0"
+    alpaca_api_key: str = ""
+    alpaca_api_secret: str = ""
 
     # Strategy loading
     strategy_dirs: list[str] = ["strategies"]

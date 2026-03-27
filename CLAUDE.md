@@ -11,7 +11,7 @@ Built by Venture Chain.
 - **UI**: React + TypeScript + Vite (Control Room dashboard)
 - **ML**: PyTorch + CUDA
 - **Broker**: Interactive Brokers (via official ibapi)
-- **Data Sources**: Finnhub, Alpha Vantage, yfinance, SEC EDGAR, Reddit (PRAW), StockTwits
+- **Data Sources**: Alpaca, Finnhub, Alpha Vantage, yfinance, SEC EDGAR, Reddit (PRAW), StockTwits
 
 ## Local Dev
 
