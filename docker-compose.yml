@@ -3,13 +3,13 @@ services:
     build: ./ib-gateway
     ports:
       - "5104:4003"
+      - "5105:6080"
     volumes:
       - ib-gateway-data:/opt/ibgateway
     environment:
       - TWS_USERID=${TWS_USERID}
       - TWS_PASSWORD=${TWS_PASSWORD}
       - TRADING_MODE=${TRADING_MODE:-paper}
-      - TWS_ACCEPT_INCOMING=${TWS_ACCEPT_INCOMING:-}
     restart: unless-stopped
 
   icarus-api:
