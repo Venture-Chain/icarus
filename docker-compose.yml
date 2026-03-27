@@ -1,0 +1,83 @@
+services:
+  ib-gateway:
+    build: ./ib-gateway
+    ports:
+      - "5104:4003"
+    volumes:
+      - ib-gateway-data:/opt/ibgateway
+    environment:
+      - TWS_USERID=${TWS_USERID}
+      - TWS_PASSWORD=${TWS_PASSWORD}
+      - TRADING_MODE=${TRADING_MODE:-paper}
+      - TWS_ACCEPT_INCOMING=${TWS_ACCEPT_INCOMING:-}
+    restart: unless-stopped
+
+  icarus-api:
+    build: ./api
+    ports:
+      - "5100:8000"
+    depends_on:
+      - timescaledb
+      - redis
+    environment:
+      - DATABASE_URL=postgresql://icarus:icarus@timescaledb:5432/icarus
+      - REDIS_URL=redis://redis:6379
+      - IB_HOST=ib-gateway
+      - IB_PORT=4003
+    volumes:
+      - ./api:/app
+    restart: unless-stopped
+
+  icarus-worker:
+    build: ./worker
+    depends_on:
+      - timescaledb
+      - redis
+    environment:
+      - DATABASE_URL=postgresql://icarus:icarus@timescaledb:5432/icarus
+      - REDIS_URL=redis://redis:6379
+      - IB_HOST=ib-gateway
+      - IB_PORT=4003
+    volumes:
+      - ./worker:/app
+    restart: unless-stopped
+
+  timescaledb:
+    image: timescale/timescaledb:latest-pg16
+    ports:
+      - "5102:5432"
+    environment:
+      - POSTGRES_USER=icarus
+      - POSTGRES_PASSWORD=icarus
+      - POSTGRES_DB=icarus
+    volumes:
+      - timescaledb-data:/var/lib/postgresql/data
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "5103:6379"
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes
+    restart: unless-stopped
+
+  icarus-ui:
+    build: ./ui
+    ports:
+      - "5101:5173"
+    depends_on:
+      - icarus-api
+    environment:
+      - VITE_API_URL=http://localhost:5100
+    volumes:
+      - ./ui:/app
+      - /app/node_modules
+    restart: unless-stopped
+
+volumes:
+  ib-gateway-data:
+  timescaledb-data:
+  redis-data:

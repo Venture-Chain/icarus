@@ -1,0 +1,13 @@
+sqlalchemy==2.0.35
+asyncpg==0.29.0
+redis[hiredis]==5.1.0
+pydantic==2.9.0
+pydantic-settings==2.5.0
+ibapi==10.30.1
+numpy==2.1.0
+pandas==2.2.0
+httpx==0.27.0
+praw==7.7.0
+yfinance==0.2.40
+feedparser==6.0.11
+apscheduler==3.10.4

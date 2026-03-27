@@ -1,0 +1,29 @@
+# Environment
+.env
+*.env
+docker-compose.override.yml
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+
+# Node
+node_modules/
+dist/
+
+# ML weights
+ml/weights/*.pt
+ml/weights/*.pth
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Database
+db/data/
