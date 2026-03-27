@@ -1,36 +1,132 @@
 """
 Strategy plugin loader and signal generation.
-Loads strategies from configurable directory paths.
+Discovers strategies from configurable directories, manages lifecycle.
 """
 import importlib
-import os
+import importlib.util
+import logging
 from pathlib import Path
+
+from config import settings
+from strategies.base import BaseStrategy, Signal
+
+log = logging.getLogger("icarus.strategy")
 
 
 class StrategyEngine:
-    def __init__(self, strategy_dirs: list[str] = None):
-        self.strategy_dirs = strategy_dirs or ["strategies"]
-        self.loaded_strategies = {}
+    """Load, manage, and run strategy plugins."""
+
+    def __init__(self, strategy_dirs: list[str] | None = None):
+        self.strategy_dirs = strategy_dirs or settings.strategy_dirs
+        if settings.research_path:
+            research_strategies = f"{settings.research_path}/strategies"
+            if research_strategies not in self.strategy_dirs:
+                self.strategy_dirs.append(research_strategies)
+        self.loaded_strategies: dict[str, BaseStrategy] = {}
 
     def load_strategies(self):
-        """Discover and load strategy plugins from configured directories."""
+        """Discover and load all strategy plugins."""
         for directory in self.strategy_dirs:
             path = Path(directory)
             if not path.exists():
+                log.debug(f"strategy dir not found: {directory}")
                 continue
             for file in path.glob("*.py"):
                 if file.name.startswith("_") or file.name == "base.py":
                     continue
-                self._load_strategy_module(file)
+                try:
+                    self._load_module(file)
+                except Exception as e:
+                    log.error(f"failed to load {file}: {e}")
 
-    def _load_strategy_module(self, path: Path):
-        """Load a single strategy module."""
-        pass
+        log.info(f"loaded {len(self.loaded_strategies)} strategies: {list(self.loaded_strategies.keys())}")
 
-    def get_strategy(self, name: str):
-        """Get a loaded strategy by name."""
+    def _load_module(self, path: Path):
+        """Load a strategy module and register any BaseStrategy subclasses."""
+        spec = importlib.util.spec_from_file_location(path.stem, path)
+        if not spec or not spec.loader:
+            return
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+
+        for attr_name in dir(module):
+            attr = getattr(module, attr_name)
+            if (
+                isinstance(attr, type)
+                and issubclass(attr, BaseStrategy)
+                and attr is not BaseStrategy
+            ):
+                try:
+                    instance = attr()
+                    self.loaded_strategies[instance.name] = instance
+                    log.info(f"registered strategy: {instance.name}")
+                except Exception as e:
+                    log.error(f"failed to instantiate {attr_name}: {e}")
+
+    def get_strategy(self, name: str) -> BaseStrategy | None:
         return self.loaded_strategies.get(name)
 
-    def list_strategies(self):
-        """List all loaded strategies."""
-        return list(self.loaded_strategies.keys())
+    def list_strategies(self) -> list[dict]:
+        return [
+            {
+                "name": s.name,
+                "description": s.description,
+                "parameters": s.parameters(),
+                "required_data": [
+                    {"type": r.data_type, "lookback": r.lookback_days}
+                    for r in s.required_data()
+                ],
+            }
+            for s in self.loaded_strategies.values()
+        ]
+
+    def compute_signals(self, strategy_name: str, universe: list[str], as_of) -> list[Signal]:
+        """Run a strategy and get signals."""
+        strategy = self.get_strategy(strategy_name)
+        if not strategy:
+            raise ValueError(f"strategy not found: {strategy_name}")
+        return strategy.compute_signals(universe, as_of)
+
+
+class SignalCombiner:
+    """Combine signals from multiple strategies with weighting."""
+
+    def __init__(self):
+        self.weights: dict[str, float] = {}
+
+    def set_weight(self, strategy_name: str, weight: float):
+        self.weights[strategy_name] = weight
+
+    def combine(self, signals_by_strategy: dict[str, list[Signal]]) -> list[Signal]:
+        """Weighted combination of signals across strategies."""
+        ticker_scores: dict[str, float] = {}
+        ticker_signals: dict[str, Signal] = {}
+
+        for strategy_name, signals in signals_by_strategy.items():
+            weight = self.weights.get(strategy_name, 1.0)
+            for signal in signals:
+                key = f"{signal.ticker}:{signal.direction}"
+                weighted_confidence = signal.confidence * weight
+
+                if key not in ticker_scores:
+                    ticker_scores[key] = 0
+                    ticker_signals[key] = Signal(
+                        ticker=signal.ticker,
+                        direction=signal.direction,
+                        instrument=signal.instrument,
+                        confidence=0,
+                        hedge_for=signal.hedge_for,
+                        sizing_method=signal.sizing_method,
+                    )
+                ticker_scores[key] += weighted_confidence
+
+        # Normalize and return
+        total_weight = sum(self.weights.values()) or 1.0
+        combined = []
+        for key, score in ticker_scores.items():
+            signal = ticker_signals[key]
+            signal.confidence = score / total_weight
+            combined.append(signal)
+
+        combined.sort(key=lambda s: abs(s.confidence), reverse=True)
+        return combined
