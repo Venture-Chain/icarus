@@ -15,17 +15,9 @@ websockify --web /usr/share/novnc 6080 localhost:5900 &
 sleep 1
 
 echo "==================================================="
-echo " IB Gateway starting..."
-echo " noVNC: http://localhost:5105  (approve 2FA here)"
-echo " VNC:   localhost:5900"
+echo " IB Gateway ready"
+echo " Open http://localhost:5105 to log in"
 echo "==================================================="
 
-# Write IBC credentials from env vars
-if [ -n "$TWS_USERID" ] && [ -n "$TWS_PASSWORD" ]; then
-    sed -i "s/^IbLoginId=.*/IbLoginId=$TWS_USERID/" /opt/ibc/ibc.ini
-    sed -i "s/^IbPassword=.*/IbPassword=$TWS_PASSWORD/" /opt/ibc/ibc.ini
-    sed -i "s/^TradingMode=.*/TradingMode=${TRADING_MODE:-paper}/" /opt/ibc/ibc.ini
-fi
-
-# Start IB Gateway via IBC (handles login automation and 2FA waiting)
-/opt/ibc/gatewaystart.sh -inline
+# Start IB Gateway directly (you log in via the noVNC browser UI)
+/opt/ibgateway/ibgateway

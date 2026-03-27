@@ -6,10 +6,6 @@ services:
       - "5105:6080"
     volumes:
       - ib-gateway-data:/opt/ibgateway
-    environment:
-      - TWS_USERID=${TWS_USERID}
-      - TWS_PASSWORD=${TWS_PASSWORD}
-      - TRADING_MODE=${TRADING_MODE:-paper}
     restart: unless-stopped
 
   icarus-api:

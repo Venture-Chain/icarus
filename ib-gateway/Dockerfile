@@ -4,17 +4,8 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     wget unzip xvfb libxtst6 libxrender1 libxi6 \
     openjdk-11-jre-headless \
-    x11vnc novnc websockify \
-    python3 python3-pip && \
+    x11vnc novnc websockify && \
     rm -rf /var/lib/apt/lists/*
-
-# Install IBC (IB Controller) for automated login and session management
-ARG IBC_VERSION=3.18.0
-RUN wget -q https://github.com/IbcAlpha/IBC/releases/download/${IBC_VERSION}/IBCLinux-${IBC_VERSION}.zip -O /tmp/ibc.zip && \
-    mkdir -p /opt/ibc && \
-    unzip /tmp/ibc.zip -d /opt/ibc && \
-    chmod +x /opt/ibc/*.sh && \
-    rm /tmp/ibc.zip
 
 # Download and install IB Gateway (stable version)
 ARG IB_GATEWAY_VERSION=10.30.1t
@@ -25,7 +16,6 @@ RUN wget -q https://download2.interactivebrokers.com/installers/ibgateway/stable
 
 # Copy configs
 COPY config.ini /root/Jts/config.ini
-COPY ibc.ini /opt/ibc/ibc.ini
 COPY run.sh /opt/run.sh
 RUN chmod +x /opt/run.sh
 
