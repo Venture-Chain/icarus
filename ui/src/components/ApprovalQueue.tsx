@@ -99,21 +99,17 @@ export default function ApprovalQueue({ apiUrl }: Props) {
       )}
 
       <div className="kill-switch-section">
-        <div className="kill-switch-header">Emergency Controls</div>
-        <div className="kill-switch-row">
-          <span className={`kill-switch-status ${killActive ? 'armed' : ''}`}>
-            {killActive
-              ? 'ARMED. CIO approval needed to deactivate.'
-              : 'Closes all open positions immediately.'}
-          </span>
-          <button
-            className={`btn-kill ${killActive ? 'armed' : ''}`}
-            onClick={handleKillSwitch}
-            disabled={killActive}
-            style={{ cursor: killActive ? 'not-allowed' : 'pointer' }}
-          >
-            {killActive ? 'ARMED' : 'FLATTEN ALL'}
-          </button>
+        <button
+          className={`btn-kill-big ${killActive ? 'armed' : ''}`}
+          onClick={handleKillSwitch}
+          disabled={killActive}
+        >
+          {killActive ? 'KILL SWITCH ARMED' : 'KILL SWITCH'}
+        </button>
+        <div className="kill-switch-sub">
+          {killActive
+            ? 'All positions flattened. CIO approval needed to deactivate.'
+            : 'Emergency: closes all open positions immediately'}
         </div>
       </div>
     </>

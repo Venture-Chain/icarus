@@ -751,75 +751,55 @@ body {
 
 /* Kill switch */
 .kill-switch-section {
-  margin-top: 14px;
+  margin-top: auto;
   padding-top: 12px;
   border-top: 1px solid var(--border);
   flex-shrink: 0;
+  text-align: center;
 }
 
-.kill-switch-header {
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 1.5px;
-  color: var(--text-muted);
-  margin-bottom: 10px;
-  font-family: 'Inter', sans-serif;
-}
-
-.kill-switch-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.kill-switch-status {
-  font-size: 11px;
-  color: var(--text-secondary);
-  flex: 1;
-  line-height: 1.5;
-}
-
-.kill-switch-status.armed {
+.btn-kill-big {
+  width: 100%;
+  padding: 16px 24px;
+  border-radius: 6px;
+  border: 2px solid rgba(255, 23, 68, 0.5);
+  background: rgba(255, 23, 68, 0.08);
   color: var(--red);
-}
-
-.btn-kill {
-  padding: 7px 16px;
-  border-radius: 4px;
-  border: 1px solid rgba(255, 23, 68, 0.5);
-  background: var(--red-glow);
-  color: var(--red);
-  font-size: 11px;
+  font-size: 18px;
   font-weight: 700;
   cursor: pointer;
-  letter-spacing: 1.5px;
+  letter-spacing: 3px;
   text-transform: uppercase;
-  white-space: nowrap;
   transition: all 150ms ease;
   font-family: 'JetBrains Mono', monospace;
 }
 
-.btn-kill:hover {
-  background: rgba(255, 23, 68, 0.18);
+.btn-kill-big:hover {
+  background: rgba(255, 23, 68, 0.15);
   border-color: var(--red);
-  box-shadow: 0 0 16px rgba(255, 23, 68, 0.2);
+  box-shadow: 0 0 24px rgba(255, 23, 68, 0.25);
 }
 
-.btn-kill:active {
+.btn-kill-big:active {
   transform: scale(0.98);
 }
 
-.btn-kill.armed {
+.btn-kill-big.armed {
   background: rgba(255, 23, 68, 0.2);
   border-color: var(--red);
   animation: kill-pulse 1.5s ease-in-out infinite;
   cursor: not-allowed;
 }
 
+.kill-switch-sub {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 8px;
+}
+
 @keyframes kill-pulse {
   0%, 100% { box-shadow: 0 0 8px rgba(255, 23, 68, 0.2); }
-  50% { box-shadow: 0 0 24px rgba(255, 23, 68, 0.5); }
+  50% { box-shadow: 0 0 30px rgba(255, 23, 68, 0.5); }
 }
 
 /* Portfolio vertical */
