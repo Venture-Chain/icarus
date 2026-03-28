@@ -20,6 +20,7 @@ services:
       - REDIS_URL=redis://redis:6379
       - IB_HOST=ib-gateway
       - IB_PORT=4003
+      - QUANTUM_ENABLED=${QUANTUM_ENABLED:-false}
     volumes:
       - ./api:/app
     restart: unless-stopped

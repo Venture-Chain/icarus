@@ -6,6 +6,7 @@ import RiskConsole from './components/RiskConsole'
 import ApprovalQueue from './components/ApprovalQueue'
 import AlertFeed from './components/AlertFeed'
 import SystemHealth from './components/SystemHealth'
+import QuantumLab from './components/QuantumLab'
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5100'
 const WS_URL = API_URL.replace('http', 'ws') + '/ws'
@@ -40,6 +41,7 @@ function isMarketOpen(date: Date): boolean {
 function App() {
   const [alerts, setAlerts] = useState<Alert[]>([])
   const [connected, setConnected] = useState(false)
+  const [quantumAvailable, setQuantumAvailable] = useState(false)
   const wsRef = useRef<WebSocket | null>(null)
   const now = useCurrentTime()
 
@@ -70,6 +72,13 @@ function App() {
     return () => wsRef.current?.close()
   }, [])
 
+  useEffect(() => {
+    fetch(`${API_URL}/quantum/status`)
+      .then(r => r.json())
+      .then(data => setQuantumAvailable(data.enabled === true))
+      .catch(() => setQuantumAvailable(false))
+  }, [])
+
   const marketOpen = isMarketOpen(now)
   const timeStr = now.toLocaleTimeString('en-US', {
     hour: '2-digit',
@@ -97,7 +106,7 @@ function App() {
         </div>
       </header>
 
-      <div className="grid">
+      <div className={`grid ${quantumAvailable ? 'grid-with-quantum' : ''}`}>
         <div className="panel panel-risk">
           <RiskConsole apiUrl={API_URL} />
         </div>
@@ -116,6 +125,11 @@ function App() {
         <div className="panel panel-alerts">
           <AlertFeed alerts={alerts} />
         </div>
+        {quantumAvailable && (
+          <div className="panel panel-quantum">
+            <QuantumLab apiUrl={API_URL} />
+          </div>
+        )}
       </div>
     </div>
   )

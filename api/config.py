@@ -23,6 +23,11 @@ class Settings(BaseSettings):
     strategy_dirs: list[str] = ["strategies"]
     research_path: str = ""
 
+    # Quantum finance (requires hlquantum pip package)
+    quantum_enabled: bool = False
+    quantum_backend: str = "simulator"
+    quantum_shots: int = 1024
+
     class Config:
         env_file = ".env"
 

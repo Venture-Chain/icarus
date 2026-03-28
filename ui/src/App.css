@@ -19,6 +19,9 @@
   --yellow: #ffab00;
   --yellow-glow: rgba(255, 171, 0, 0.1);
   --cyan: #00e5ff;
+  --quantum: #a855f7;
+  --quantum-glow: rgba(168, 85, 247, 0.12);
+  --quantum-border: rgba(168, 85, 247, 0.4);
 }
 
 * {
@@ -984,6 +987,199 @@ body {
   }
   .pf-value-number { font-size: 26px; }
   .pf-pnl-number { font-size: 20px; }
+}
+
+/* ── Quantum Lab ──────────────────────────────────────────────────────────── */
+
+.grid-with-quantum {
+  grid-template-columns: 2fr 1fr 1fr;
+  grid-template-rows: 1fr 1fr auto;
+}
+
+.panel-quantum {
+  grid-column: 1 / -1;
+  border-color: var(--quantum-border) !important;
+  max-height: 360px;
+  overflow-y: auto;
+}
+
+.panel-quantum:hover {
+  border-color: var(--quantum) !important;
+  box-shadow: 0 0 20px var(--quantum-glow);
+}
+
+.quantum-status-badge {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  padding: 3px 8px;
+  border-radius: 3px;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.quantum-status-badge.online {
+  color: var(--quantum);
+  background: var(--quantum-glow);
+  border: 1px solid var(--quantum-border);
+}
+
+.quantum-status-badge.offline {
+  color: var(--text-muted);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+}
+
+.quantum-content {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.quantum-version {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.quantum-models {
+  display: flex;
+  gap: 6px;
+}
+
+.quantum-model-btn {
+  flex: 1;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 150ms ease;
+  font-family: 'Inter', sans-serif;
+}
+
+.quantum-model-btn:hover {
+  border-color: var(--quantum-border);
+  color: var(--text-primary);
+}
+
+.quantum-model-btn.active {
+  border-color: var(--quantum);
+  background: var(--quantum-glow);
+  color: var(--quantum);
+}
+
+.quantum-run-btn {
+  width: 100%;
+  padding: 10px 16px;
+  border: 1px solid var(--quantum-border);
+  border-radius: 4px;
+  background: var(--quantum-glow);
+  color: var(--quantum);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  cursor: pointer;
+  transition: all 150ms ease;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.quantum-run-btn:hover {
+  background: rgba(168, 85, 247, 0.2);
+  box-shadow: 0 0 16px var(--quantum-glow);
+}
+
+.quantum-run-btn:active {
+  transform: scale(0.98);
+}
+
+.quantum-run-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.quantum-error {
+  font-size: 12px;
+  color: var(--red);
+  padding: 8px 12px;
+  background: var(--red-glow);
+  border: 1px solid rgba(255, 23, 68, 0.3);
+  border-radius: 4px;
+}
+
+.quantum-results {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.quantum-comparison {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.quantum-col {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 12px;
+}
+
+.quantum-col-header {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  margin-bottom: 10px;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.quantum-accent {
+  color: var(--quantum);
+}
+
+.classical-accent {
+  color: var(--accent);
+}
+
+.quantum-metric {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 4px 0;
+  border-bottom: 1px solid rgba(26, 31, 46, 0.5);
+}
+
+.quantum-metric:last-child {
+  border-bottom: none;
+}
+
+.quantum-metric-label {
+  font-size: 11px;
+  color: var(--text-secondary);
+  text-transform: capitalize;
+}
+
+.quantum-metric-value {
+  font-size: 12px;
+  font-weight: 600;
+  font-family: 'JetBrains Mono', monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+.quantum-circuit-info {
+  display: flex;
+  gap: 16px;
+  justify-content: center;
+  padding: 8px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 11px;
+  color: var(--text-muted);
+  font-family: 'JetBrains Mono', monospace;
 }
 
 /* Reduced motion */

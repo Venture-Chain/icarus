@@ -12,3 +12,6 @@ httpx==0.27.0
 websockets==13.0
 scikit-learn>=1.4.0
 alpaca-py>=0.28.0
+scipy>=1.12.0
+# Optional: quantum finance models (pip install hlquantum)
+# hlquantum>=0.1.3

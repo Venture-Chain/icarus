@@ -4,7 +4,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
 from config import settings
-from routers import approvals, data, ml, portfolio, research, strategy
+from routers import approvals, data, ml, portfolio, research, strategy, quantum
 
 
 @asynccontextmanager
@@ -37,6 +37,7 @@ app.include_router(strategy.router, prefix="/strategies", tags=["strategies"])
 app.include_router(portfolio.router, prefix="/portfolio", tags=["portfolio"])
 app.include_router(ml.router, prefix="/ml", tags=["ml"])
 app.include_router(approvals.router, prefix="/approvals", tags=["approvals"])
+app.include_router(quantum.router, prefix="/quantum", tags=["quantum"])
 
 
 @app.websocket("/ws")
