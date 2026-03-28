@@ -50,56 +50,47 @@ export default function SystemHealth({ apiUrl }: Props) {
   const coreServices = services.filter(s => s.group === 'core')
   const tradingServices = services.filter(s => s.group === 'trading')
 
-  const uptimePct = (list: ServiceStatus[]) => {
-    const active = list.filter(s => s.status === 'active').length
-    return Math.round((active / list.length) * 100)
-  }
-
   return (
-    <div>
+    <>
       <h2>System Health</h2>
 
-      <div className="health-group-label">Core</div>
-      {coreServices.map(s => (
-        <div key={s.name} className="health-row">
-          <div className="label">
-            <span className={`status-dot ${s.status}`} />
-            <span>{s.name}</span>
+      <div className="health-content">
+        <div className="health-group-label">Core</div>
+        {coreServices.map(s => (
+          <div key={s.name} className="health-row">
+            <div className="label">
+              <span className={`status-dot ${s.status}`} />
+              <span>{s.name}</span>
+            </div>
+            <div className="health-row-right">
+              {s.latency !== undefined ? (
+                <span className="latency-badge">{s.latency}ms</span>
+              ) : (
+                <span className="latency-badge">--</span>
+              )}
+              <span className="uptime-label">--</span>
+            </div>
           </div>
-          <div className="health-row-right">
-            {s.latency !== undefined && (
-              <span className="latency-badge">{s.latency}ms</span>
-            )}
-            <span className="uptime-label">--</span>
-          </div>
-        </div>
-      ))}
-      <div style={{ paddingLeft: '8px', marginBottom: '4px' }}>
-        <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontFamily: 'JetBrains Mono, monospace' }}>
-          {uptimePct(coreServices)}% up
-        </span>
-      </div>
+        ))}
 
-      <div className="health-group-label">Trading</div>
-      {tradingServices.map(s => (
-        <div key={s.name} className="health-row">
-          <div className="label">
-            <span className={`status-dot ${s.status}`} />
-            <span>{s.name}</span>
+        <div className="health-group-label">Trading</div>
+        {tradingServices.map(s => (
+          <div key={s.name} className="health-row">
+            <div className="label">
+              <span className={`status-dot ${s.status}`} />
+              <span>{s.name}</span>
+            </div>
+            <div className="health-row-right">
+              {s.latency !== undefined ? (
+                <span className="latency-badge">{s.latency}ms</span>
+              ) : (
+                <span className="latency-badge">--</span>
+              )}
+              <span className="uptime-label">--</span>
+            </div>
           </div>
-          <div className="health-row-right">
-            {s.latency !== undefined && (
-              <span className="latency-badge">{s.latency}ms</span>
-            )}
-            <span className="uptime-label">--</span>
-          </div>
-        </div>
-      ))}
-      <div style={{ paddingLeft: '8px' }}>
-        <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontFamily: 'JetBrains Mono, monospace' }}>
-          {uptimePct(tradingServices)}% up
-        </span>
+        ))}
       </div>
-    </div>
+    </>
   )
 }

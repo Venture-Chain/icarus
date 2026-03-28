@@ -1,5 +1,4 @@
-import { useState } from 'react'
-import { useEffect } from 'react'
+import { useState, useEffect } from 'react'
 
 interface Approval {
   id: number
@@ -31,7 +30,9 @@ export default function ApprovalQueue({ apiUrl }: Props) {
         const resp = await fetch(`${apiUrl}/approvals/`)
         const data = await resp.json()
         setApprovals((data.approvals || []).filter((a: Approval) => a.status === 'pending'))
-      } catch {}
+      } catch (err) {
+        console.error('ApprovalQueue fetch failed:', err)
+      }
     }
     fetchApprovals()
     const id = setInterval(fetchApprovals, 5000)
@@ -46,11 +47,13 @@ export default function ApprovalQueue({ apiUrl }: Props) {
         body: JSON.stringify({ status, decided_by: 'CIO' }),
       })
       setApprovals(prev => prev.filter(a => a.id !== id))
-    } catch {}
+    } catch (err) {
+      console.error('ApprovalQueue decision failed:', err)
+    }
   }
 
   const handleKillSwitch = async () => {
-    if (!confirm('Activate kill switch? This will flatten ALL positions immediately.')) return
+    if (!confirm('Activate FLATTEN ALL? This will close all open positions immediately.')) return
     try {
       await fetch(`${apiUrl}/portfolio/kill-switch`, { method: 'POST' })
       setKillActive(true)
@@ -60,7 +63,7 @@ export default function ApprovalQueue({ apiUrl }: Props) {
   }
 
   return (
-    <div>
+    <>
       <div className="panel-header-row">
         <h2>Approvals</h2>
         {approvals.length > 0 && (
@@ -69,28 +72,30 @@ export default function ApprovalQueue({ apiUrl }: Props) {
       </div>
 
       {approvals.length === 0 ? (
-        <div className="empty-state">
+        <div className="empty-state" style={{ flex: 'none', padding: '20px 16px' }}>
           <div className="empty-state-icon">[ok]</div>
           <div className="empty-state-text">No pending approvals</div>
         </div>
       ) : (
-        approvals.map(a => (
-          <div key={a.id} className={`approval-item ${urgencyClass(a)}`}>
-            <div className="action-type">{a.action_type.replace(/_/g, ' ')}</div>
-            <div className="description">{a.description}</div>
-            {a.reasoning && (
-              <div className="reasoning">{a.reasoning}</div>
-            )}
-            <div className="approval-buttons">
-              <button className="btn btn-approve" onClick={() => handleDecision(a.id, 'approved')}>
-                Approve
-              </button>
-              <button className="btn btn-reject" onClick={() => handleDecision(a.id, 'rejected')}>
-                Reject
-              </button>
+        <div className="approval-list">
+          {approvals.map(a => (
+            <div key={a.id} className={`approval-item ${urgencyClass(a)}`}>
+              <div className="action-type">{a.action_type.replace(/_/g, ' ')}</div>
+              <div className="description">{a.description}</div>
+              {a.reasoning && (
+                <div className="reasoning">{a.reasoning}</div>
+              )}
+              <div className="approval-buttons">
+                <button className="btn btn-approve" onClick={() => handleDecision(a.id, 'approved')}>
+                  Approve
+                </button>
+                <button className="btn btn-reject" onClick={() => handleDecision(a.id, 'rejected')}>
+                  Reject
+                </button>
+              </div>
             </div>
-          </div>
-        ))
+          ))}
+        </div>
       )}
 
       <div className="kill-switch-section">
@@ -98,18 +103,19 @@ export default function ApprovalQueue({ apiUrl }: Props) {
         <div className="kill-switch-row">
           <span className={`kill-switch-status ${killActive ? 'armed' : ''}`}>
             {killActive
-              ? 'Kill switch engaged. CIO approval needed to deactivate.'
+              ? 'ARMED. CIO approval needed to deactivate.'
               : 'Closes all open positions immediately.'}
           </span>
           <button
             className={`btn-kill ${killActive ? 'armed' : ''}`}
             onClick={handleKillSwitch}
             disabled={killActive}
+            style={{ cursor: killActive ? 'not-allowed' : 'pointer' }}
           >
-            {killActive ? 'Armed' : 'Flatten All'}
+            {killActive ? 'ARMED' : 'FLATTEN ALL'}
           </button>
         </div>
       </div>
-    </div>
+    </>
   )
 }

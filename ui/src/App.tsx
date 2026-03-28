@@ -82,15 +82,17 @@ function App() {
   return (
     <div className="control-room">
       <header className="control-room-header">
-        <h1>ICARUS</h1>
-        <span className="header-subtitle">Control Room</span>
+        <div className="header-brand">
+          <span className="header-title">ICARUS</span>
+          <span className="header-subtitle">Control Room</span>
+        </div>
         <div className="header-right">
           <span className={`market-status ${marketOpen ? 'open' : 'closed'}`}>
-            {marketOpen ? 'Market Open' : 'Market Closed'}
+            {marketOpen ? 'MKT OPEN' : 'MKT CLOSED'}
           </span>
           <span className="header-time">{timeStr} ET</span>
-          <span className={`connection-status ${connected ? 'connected' : 'disconnected'}`}>
-            {connected ? 'Live' : 'Disconnected'}
+          <span className={`connection-badge ${connected ? 'connected' : 'disconnected'}`}>
+            {connected ? 'LIVE' : 'OFFLINE'}
           </span>
         </div>
       </header>

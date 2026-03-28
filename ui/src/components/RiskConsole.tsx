@@ -3,14 +3,17 @@ import { useState, useEffect } from 'react'
 interface RiskData {
   var_95: number
   cvar_95: number
-  max_drawdown: number
-  current_drawdown: number
-  net_exposure: number
-  gross_exposure: number
-  beta: number
   sharpe: number
-  portfolio_value: number
+  beta: number
+  max_drawdown: number
+  drawdown_pct: number
+  drawdown_limit: number
+  net_exposure_pct: number
+  net_exposure_limit: number
+  gross_exposure_pct: number
+  gross_exposure_limit: number
   largest_position_pct: number
+  largest_position_limit: number
 }
 
 interface Props {
@@ -18,28 +21,37 @@ interface Props {
 }
 
 const defaultRisk: RiskData = {
-  var_95: 0, cvar_95: 0, max_drawdown: 0, current_drawdown: 0,
-  net_exposure: 0, gross_exposure: 0, beta: 0, sharpe: 0,
-  portfolio_value: 0, largest_position_pct: 0,
+  var_95: 0,
+  cvar_95: 0,
+  sharpe: 0,
+  beta: 0,
+  max_drawdown: 0,
+  drawdown_pct: 0,
+  drawdown_limit: 10,
+  net_exposure_pct: 0,
+  net_exposure_limit: 50,
+  gross_exposure_pct: 0,
+  gross_exposure_limit: 200,
+  largest_position_pct: 0,
+  largest_position_limit: 10,
 }
 
 interface LimitBarProps {
   value: number
   max: number
   label: string
-  valueLabel?: string
+  currentLabel: string
 }
 
-function LimitBar({ value, max, label, valueLabel }: LimitBarProps) {
+function LimitBar({ value, max, label, currentLabel }: LimitBarProps) {
   const pct = max > 0 ? Math.min((value / max) * 100, 100) : 0
-  const severity = pct > 90 ? 'breach' : pct > 70 ? 'warning' : 'ok'
-  const display = valueLabel ?? `${value.toFixed(1)}% / ${max.toFixed(0)}%`
+  const severity = pct > 85 ? 'breach' : pct > 60 ? 'warning' : 'ok'
 
   return (
     <div className="limit-bar-row">
       <div className="limit-bar-header">
         <span className="metric-label">{label}</span>
-        <span className="metric-value" style={{ fontSize: '11px' }}>{display}</span>
+        <span className="metric-value" style={{ fontSize: '12px' }}>{currentLabel}</span>
       </div>
       <div className="limit-bar">
         <div className={`limit-bar-fill ${severity}`} style={{ width: `${pct}%` }} />
@@ -66,7 +78,9 @@ export default function RiskConsole({ apiUrl }: Props) {
         const data = await resp.json()
         setRisk({ ...defaultRisk, ...data })
         setLastFetch(Date.now())
-      } catch {}
+      } catch (err) {
+        console.error('RiskConsole fetch failed:', err)
+      }
     }
     fetchRisk()
     const id = setInterval(fetchRisk, 10000)
@@ -78,47 +92,74 @@ export default function RiskConsole({ apiUrl }: Props) {
     return () => clearInterval(id)
   }, [])
 
-  const sharpeClass = risk.sharpe > 1 ? 'positive' : risk.sharpe < 0 ? 'negative' : ''
+  const sharpeClass = risk.sharpe > 1 ? 'positive' : risk.sharpe < 0 ? 'negative' : 'warning'
 
   return (
-    <div>
+    <>
       <h2>Risk Console</h2>
 
-      <div className="metric-section-label">Risk Metrics</div>
-      <div className="metric">
-        <span className="metric-label">VaR (95%)</span>
-        <span className="metric-value negative">${risk.var_95.toLocaleString()}</span>
-      </div>
-      <div className="metric">
-        <span className="metric-label">CVaR (95%)</span>
-        <span className="metric-value negative">${risk.cvar_95.toLocaleString()}</span>
+      <div className="risk-hero">
+        <div className="risk-hero-item">
+          <div className="risk-hero-label">VaR (95%)</div>
+          <div className="risk-hero-value">${risk.var_95.toLocaleString()}</div>
+        </div>
+        <div className="risk-hero-item">
+          <div className="risk-hero-label">CVaR (95%)</div>
+          <div className="risk-hero-value">${risk.cvar_95.toLocaleString()}</div>
+        </div>
       </div>
 
-      <div className="metric-separator" />
       <div className="metric-section-label">Performance</div>
       <div className="metric">
         <span className="metric-label">Sharpe Ratio</span>
-        <span className={`metric-value ${sharpeClass}`}>{risk.sharpe.toFixed(2)}</span>
+        <span className={`metric-value ${sharpeClass}`} style={{ fontSize: '20px' }}>
+          {risk.sharpe.toFixed(2)}
+        </span>
       </div>
       <div className="metric">
         <span className="metric-label">Beta</span>
-        <span className="metric-value">{risk.beta.toFixed(2)}</span>
+        <span className="metric-value" style={{ fontSize: '20px' }}>
+          {risk.beta.toFixed(2)}
+        </span>
       </div>
       <div className="metric">
         <span className="metric-label">Max Drawdown</span>
-        <span className="metric-value negative">{risk.max_drawdown.toFixed(1)}%</span>
+        <span className="metric-value negative" style={{ fontSize: '20px' }}>
+          {risk.max_drawdown.toFixed(1)}%
+        </span>
       </div>
 
       <div className="metric-separator" />
       <div className="metric-section-label">Limits</div>
-      <LimitBar value={risk.current_drawdown} max={10} label="Drawdown" />
-      <LimitBar value={risk.net_exposure * 100} max={50} label="Net Exposure" />
-      <LimitBar value={risk.gross_exposure * 100} max={200} label="Gross Exposure" />
-      <LimitBar value={risk.largest_position_pct} max={10} label="Largest Position" />
+
+      <LimitBar
+        value={risk.drawdown_pct}
+        max={risk.drawdown_limit}
+        label="Drawdown"
+        currentLabel={`${risk.drawdown_pct.toFixed(1)}% / ${risk.drawdown_limit.toFixed(0)}%`}
+      />
+      <LimitBar
+        value={risk.net_exposure_pct}
+        max={risk.net_exposure_limit}
+        label="Net Exposure"
+        currentLabel={`${risk.net_exposure_pct.toFixed(1)}% / ${risk.net_exposure_limit.toFixed(0)}%`}
+      />
+      <LimitBar
+        value={risk.gross_exposure_pct}
+        max={risk.gross_exposure_limit}
+        label="Gross Exposure"
+        currentLabel={`${risk.gross_exposure_pct.toFixed(1)}% / ${risk.gross_exposure_limit.toFixed(0)}%`}
+      />
+      <LimitBar
+        value={risk.largest_position_pct}
+        max={risk.largest_position_limit}
+        label="Largest Position"
+        currentLabel={`${risk.largest_position_pct.toFixed(1)}% / ${risk.largest_position_limit.toFixed(0)}%`}
+      />
 
       <div className="last-updated" key={tick}>
         Updated {secondsAgo(lastFetch)}
       </div>
-    </div>
+    </>
   )
 }

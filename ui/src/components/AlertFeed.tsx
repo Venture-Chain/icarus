@@ -6,7 +6,9 @@ interface Props {
 
 function formatTime(ts: string): string {
   try {
-    return new Date(ts).toLocaleTimeString('en-US', {
+    const d = new Date(ts)
+    if (isNaN(d.getTime())) return '--:--:--'
+    return d.toLocaleTimeString('en-US', {
       hour: '2-digit',
       minute: '2-digit',
       second: '2-digit',
@@ -19,7 +21,7 @@ function formatTime(ts: string): string {
 
 export default function AlertFeed({ alerts }: Props) {
   return (
-    <div>
+    <>
       <div className="panel-header-row">
         <h2>Alert Feed</h2>
         {alerts.length > 0 && (
@@ -43,6 +45,6 @@ export default function AlertFeed({ alerts }: Props) {
           ))}
         </div>
       )}
-    </div>
+    </>
   )
 }

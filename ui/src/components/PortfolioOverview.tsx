@@ -33,24 +33,27 @@ function fmt(n: number, decimals = 2): string {
 
 function fmtUsd(n: number): string {
   const abs = Math.abs(n)
-  if (abs >= 1_000_000) return `$${fmt(n / 1_000_000)}M`
-  if (abs >= 1_000) return `$${fmt(n / 1_000)}K`
-  return `$${fmt(n)}`
+  const sign = n < 0 ? '-' : ''
+  if (abs >= 1_000_000) return `${sign}$${fmt(abs / 1_000_000)}M`
+  if (abs >= 1_000) return `${sign}$${fmt(abs / 1_000)}K`
+  return `${sign}$${fmt(abs)}`
 }
 
 export default function PortfolioOverview({ apiUrl }: Props) {
   const [data, setData] = useState<PortfolioData>(defaultPortfolio)
 
   useEffect(() => {
-    const fetch_ = async () => {
+    const fetchData = async () => {
       try {
         const resp = await fetch(`${apiUrl}/portfolio/risk`)
         const json = await resp.json()
         setData({ ...defaultPortfolio, ...json })
-      } catch {}
+      } catch (err) {
+        console.error('PortfolioOverview fetch failed:', err)
+      }
     }
-    fetch_()
-    const id = setInterval(fetch_, 10000)
+    fetchData()
+    const id = setInterval(fetchData, 10000)
     return () => clearInterval(id)
   }, [apiUrl])
 
@@ -60,36 +63,32 @@ export default function PortfolioOverview({ apiUrl }: Props) {
   const grossExposurePct = Math.min((data.gross_exposure * 100) / 200, 100)
 
   return (
-    <div>
+    <>
       <h2>Portfolio Overview</h2>
 
       <div className="portfolio-hero">
-        <div className="portfolio-hero-item">
+        <div className="portfolio-hero-col">
           <div className="portfolio-hero-label">Portfolio Value</div>
-          <div className="portfolio-hero-value large">
+          <div className="portfolio-value">
             ${fmt(data.portfolio_value)}
           </div>
         </div>
-        <div className="portfolio-hero-item">
+
+        <div className="portfolio-hero-col">
           <div className="portfolio-hero-label">Daily P&amp;L</div>
-          <div className={`portfolio-hero-value ${pnlPositive ? 'positive' : 'negative'}`}>
+          <div className={`portfolio-pnl ${pnlPositive ? 'positive' : 'negative'}`}>
             {pnlSign}{fmtUsd(data.daily_pnl)}
           </div>
-          <div className="portfolio-hero-sub">
+          <div className={`portfolio-pnl-pct ${pnlPositive ? 'positive' : 'negative'}`}>
             {pnlSign}{fmt(data.daily_pnl_pct)}%
           </div>
         </div>
-        <div className="portfolio-hero-item">
+
+        <div className="portfolio-hero-col">
           <div className="portfolio-hero-label">Open Positions</div>
-          <div className="portfolio-hero-value">
-            {data.open_positions}
-          </div>
-        </div>
-        <div className="portfolio-hero-item">
-          <div className="portfolio-hero-label">Buying Power</div>
-          <div className="portfolio-hero-value">
-            {fmtUsd(data.buying_power)}
-          </div>
+          <div className="portfolio-positions">{data.open_positions}</div>
+          <div className="portfolio-buying-label">Buying Power</div>
+          <div className="portfolio-buying-value">{fmtUsd(data.buying_power)}</div>
         </div>
       </div>
 
@@ -99,7 +98,7 @@ export default function PortfolioOverview({ apiUrl }: Props) {
           <div className="exposure-bar">
             <div
               className="exposure-bar-fill"
-              style={{ width: `${Math.min(netExposurePct / 50 * 100, 100)}%` }}
+              style={{ width: `${Math.min((netExposurePct / 50) * 100, 100)}%` }}
             />
           </div>
           <span className="exposure-bar-value">{fmt(netExposurePct, 1)}%</span>
@@ -115,6 +114,6 @@ export default function PortfolioOverview({ apiUrl }: Props) {
           <span className="exposure-bar-value">{fmt(data.gross_exposure * 100, 1)}%</span>
         </div>
       </div>
-    </div>
+    </>
   )
 }

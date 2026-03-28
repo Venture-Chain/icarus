@@ -22,7 +22,9 @@ export default function StrategyCommand({ apiUrl }: Props) {
         const resp = await fetch(`${apiUrl}/strategies/`)
         const data = await resp.json()
         setStrategies(data.strategies || [])
-      } catch {}
+      } catch (err) {
+        console.error('StrategyCommand fetch failed:', err)
+      }
     }
     fetchStrategies()
     const id = setInterval(fetchStrategies, 30000)
@@ -36,41 +38,49 @@ export default function StrategyCommand({ apiUrl }: Props) {
   }
 
   return (
-    <div>
+    <>
       <h2>Strategy Command</h2>
+
       {strategies.length === 0 ? (
         <div className="empty-state">
-          <div className="empty-state-icon">[--]</div>
+          <div className="empty-state-icon">[ -- ]</div>
           <div className="empty-state-text">No strategies loaded</div>
-          <div className="empty-state-sub">Deploy a strategy to get started</div>
+          <div className="empty-state-sub">Deploy a strategy to begin</div>
         </div>
       ) : (
-        strategies.map(s => (
-          <div key={s.id} className="strategy-row">
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div className="strategy-name">{s.name}</div>
-              {s.description && (
-                <div className="strategy-desc">{s.description}</div>
-              )}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '4px' }}>
-                <div className="strategy-budget-bar">
-                  <div
-                    className="strategy-budget-fill"
-                    style={{ width: `${Math.min(s.risk_budget, 100)}%` }}
-                  />
+        <div className="strategy-list">
+          {strategies.map(s => (
+            <div key={s.id} className="strategy-row">
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div className="strategy-name">{s.name}</div>
+                {s.description && (
+                  <div className="strategy-desc">{s.description}</div>
+                )}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '6px' }}>
+                  <div className="strategy-budget-bar">
+                    <div
+                      className="strategy-budget-fill"
+                      style={{ width: `${Math.min(s.risk_budget, 100)}%` }}
+                    />
+                  </div>
+                  <span style={{
+                    fontSize: '11px',
+                    color: 'var(--text-muted)',
+                    fontFamily: 'JetBrains Mono, monospace',
+                    fontVariantNumeric: 'tabular-nums',
+                  }}>
+                    {s.risk_budget}%
+                  </span>
                 </div>
-                <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontFamily: 'JetBrains Mono, monospace', fontVariantNumeric: 'tabular-nums' }}>
-                  {s.risk_budget}%
-                </span>
+              </div>
+              <div className="strategy-meta">
+                <span className={`pill ${modeClass(s.mode)}`}>{s.mode}</span>
+                <span className={`status-dot ${s.status === 'active' ? 'active' : 'inactive'}`} />
               </div>
             </div>
-            <div className="strategy-meta">
-              <span className={`pill ${modeClass(s.mode)}`}>{s.mode}</span>
-              <span className={`status-dot ${s.status === 'active' ? 'active' : 'inactive'}`} />
-            </div>
-          </div>
-        ))
+          ))}
+        </div>
       )}
-    </div>
+    </>
   )
 }
