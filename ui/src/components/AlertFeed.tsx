@@ -4,21 +4,40 @@ interface Props {
   alerts: Alert[]
 }
 
+function formatTime(ts: string): string {
+  try {
+    return new Date(ts).toLocaleTimeString('en-US', {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false,
+    })
+  } catch {
+    return '--:--:--'
+  }
+}
+
 export default function AlertFeed({ alerts }: Props) {
   return (
     <div>
-      <h2>Alert Feed</h2>
+      <div className="panel-header-row">
+        <h2>Alert Feed</h2>
+        {alerts.length > 0 && (
+          <span className="badge">{alerts.length}</span>
+        )}
+      </div>
+
       {alerts.length === 0 ? (
-        <div style={{ color: 'var(--text-secondary)', fontSize: '13px' }}>
-          No alerts
+        <div className="empty-state">
+          <div className="empty-state-icon">[~]</div>
+          <div className="empty-state-text">No alerts</div>
+          <div className="empty-state-sub">System is quiet</div>
         </div>
       ) : (
-        <div style={{ maxHeight: '220px', overflowY: 'auto' }}>
+        <div className="alert-feed-list">
           {alerts.map(a => (
             <div key={a.id} className={`alert-item ${a.severity}`}>
-              <span className="alert-time">
-                {new Date(a.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-              </span>
+              <span className="alert-time">{formatTime(a.timestamp)}</span>
               <span className="alert-msg">{a.message}</span>
             </div>
           ))}

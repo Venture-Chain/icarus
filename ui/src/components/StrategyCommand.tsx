@@ -25,28 +25,47 @@ export default function StrategyCommand({ apiUrl }: Props) {
       } catch {}
     }
     fetchStrategies()
-    const interval = setInterval(fetchStrategies, 30000)
-    return () => clearInterval(interval)
+    const id = setInterval(fetchStrategies, 30000)
+    return () => clearInterval(id)
   }, [apiUrl])
+
+  const modeClass = (mode: string) => {
+    if (mode === 'live') return 'live'
+    if (mode === 'backtest') return 'backtest'
+    return 'paper'
+  }
 
   return (
     <div>
       <h2>Strategy Command</h2>
       {strategies.length === 0 ? (
-        <div style={{ color: 'var(--text-secondary)', fontSize: '13px' }}>
-          No active strategies
+        <div className="empty-state">
+          <div className="empty-state-icon">[--]</div>
+          <div className="empty-state-text">No strategies loaded</div>
+          <div className="empty-state-sub">Deploy a strategy to get started</div>
         </div>
       ) : (
         strategies.map(s => (
           <div key={s.id} className="strategy-row">
-            <div>
+            <div style={{ flex: 1, minWidth: 0 }}>
               <div className="strategy-name">{s.name}</div>
-              <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
-                {s.description}
+              {s.description && (
+                <div className="strategy-desc">{s.description}</div>
+              )}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '4px' }}>
+                <div className="strategy-budget-bar">
+                  <div
+                    className="strategy-budget-fill"
+                    style={{ width: `${Math.min(s.risk_budget, 100)}%` }}
+                  />
+                </div>
+                <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontFamily: 'JetBrains Mono, monospace', fontVariantNumeric: 'tabular-nums' }}>
+                  {s.risk_budget}%
+                </span>
               </div>
             </div>
             <div className="strategy-meta">
-              <span className={`pill ${s.mode}`}>{s.mode}</span>
+              <span className={`pill ${modeClass(s.mode)}`}>{s.mode}</span>
               <span className={`status-dot ${s.status === 'active' ? 'active' : 'inactive'}`} />
             </div>
           </div>

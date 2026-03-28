@@ -1,9 +1,9 @@
 import { useState, useEffect, useRef } from 'react'
 import './App.css'
+import PortfolioOverview from './components/PortfolioOverview'
 import StrategyCommand from './components/StrategyCommand'
 import RiskConsole from './components/RiskConsole'
 import ApprovalQueue from './components/ApprovalQueue'
-import KillSwitch from './components/KillSwitch'
 import AlertFeed from './components/AlertFeed'
 import SystemHealth from './components/SystemHealth'
 
@@ -18,10 +18,30 @@ export interface Alert {
   timestamp: string
 }
 
+function useCurrentTime() {
+  const [time, setTime] = useState(() => new Date())
+  useEffect(() => {
+    const id = setInterval(() => setTime(new Date()), 1000)
+    return () => clearInterval(id)
+  }, [])
+  return time
+}
+
+function isMarketOpen(date: Date): boolean {
+  const eastern = new Date(date.toLocaleString('en-US', { timeZone: 'America/New_York' }))
+  const day = eastern.getDay()
+  if (day === 0 || day === 6) return false
+  const h = eastern.getHours()
+  const m = eastern.getMinutes()
+  const minutes = h * 60 + m
+  return minutes >= 9 * 60 + 30 && minutes < 16 * 60
+}
+
 function App() {
   const [alerts, setAlerts] = useState<Alert[]>([])
   const [connected, setConnected] = useState(false)
   const wsRef = useRef<WebSocket | null>(null)
+  const now = useCurrentTime()
 
   useEffect(() => {
     const connect = () => {
@@ -50,33 +70,49 @@ function App() {
     return () => wsRef.current?.close()
   }, [])
 
+  const marketOpen = isMarketOpen(now)
+  const timeStr = now.toLocaleTimeString('en-US', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+    timeZone: 'America/New_York',
+  })
+
   return (
     <div className="control-room">
       <header className="control-room-header">
-        <h1>Icarus</h1>
-        <span className="subtitle">Control Room</span>
-        <span className={`connection-status ${connected ? 'connected' : 'disconnected'}`}>
-          {connected ? 'LIVE' : 'DISCONNECTED'}
-        </span>
+        <h1>ICARUS</h1>
+        <span className="header-subtitle">Control Room</span>
+        <div className="header-right">
+          <span className={`market-status ${marketOpen ? 'open' : 'closed'}`}>
+            {marketOpen ? 'Market Open' : 'Market Closed'}
+          </span>
+          <span className="header-time">{timeStr} ET</span>
+          <span className={`connection-status ${connected ? 'connected' : 'disconnected'}`}>
+            {connected ? 'Live' : 'Disconnected'}
+          </span>
+        </div>
       </header>
+
       <div className="grid">
-        <div className="panel panel-strategies">
-          <StrategyCommand apiUrl={API_URL} />
+        <div className="panel panel-portfolio">
+          <PortfolioOverview apiUrl={API_URL} />
         </div>
         <div className="panel panel-risk">
           <RiskConsole apiUrl={API_URL} />
         </div>
+        <div className="panel panel-health">
+          <SystemHealth apiUrl={API_URL} />
+        </div>
+        <div className="panel panel-strategies">
+          <StrategyCommand apiUrl={API_URL} />
+        </div>
         <div className="panel panel-approvals">
           <ApprovalQueue apiUrl={API_URL} />
         </div>
-        <div className="panel panel-killswitch">
-          <KillSwitch apiUrl={API_URL} />
-        </div>
         <div className="panel panel-alerts">
           <AlertFeed alerts={alerts} />
-        </div>
-        <div className="panel panel-health">
-          <SystemHealth apiUrl={API_URL} />
         </div>
       </div>
     </div>

@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
+import { useEffect } from 'react'
 
 interface Approval {
   id: number
@@ -7,14 +8,22 @@ interface Approval {
   reasoning: string
   status: string
   created_at: string
+  urgency?: 'high' | 'medium' | 'low'
 }
 
 interface Props {
   apiUrl: string
 }
 
+function urgencyClass(a: Approval): string {
+  if (a.urgency === 'high') return 'urgency-high'
+  if (a.urgency === 'low') return 'urgency-low'
+  return 'urgency-medium'
+}
+
 export default function ApprovalQueue({ apiUrl }: Props) {
   const [approvals, setApprovals] = useState<Approval[]>([])
+  const [killActive, setKillActive] = useState(false)
 
   useEffect(() => {
     const fetchApprovals = async () => {
@@ -25,8 +34,8 @@ export default function ApprovalQueue({ apiUrl }: Props) {
       } catch {}
     }
     fetchApprovals()
-    const interval = setInterval(fetchApprovals, 5000)
-    return () => clearInterval(interval)
+    const id = setInterval(fetchApprovals, 5000)
+    return () => clearInterval(id)
   }, [apiUrl])
 
   const handleDecision = async (id: number, status: string) => {
@@ -40,22 +49,37 @@ export default function ApprovalQueue({ apiUrl }: Props) {
     } catch {}
   }
 
+  const handleKillSwitch = async () => {
+    if (!confirm('Activate kill switch? This will flatten ALL positions immediately.')) return
+    try {
+      await fetch(`${apiUrl}/portfolio/kill-switch`, { method: 'POST' })
+      setKillActive(true)
+    } catch (err) {
+      console.error('Kill switch failed:', err)
+    }
+  }
+
   return (
     <div>
-      <h2>Approval Queue</h2>
+      <div className="panel-header-row">
+        <h2>Approvals</h2>
+        {approvals.length > 0 && (
+          <span className="badge red">{approvals.length}</span>
+        )}
+      </div>
+
       {approvals.length === 0 ? (
-        <div style={{ color: 'var(--text-secondary)', fontSize: '13px' }}>
-          No pending approvals
+        <div className="empty-state">
+          <div className="empty-state-icon">[ok]</div>
+          <div className="empty-state-text">No pending approvals</div>
         </div>
       ) : (
         approvals.map(a => (
-          <div key={a.id} className="approval-item">
+          <div key={a.id} className={`approval-item ${urgencyClass(a)}`}>
             <div className="action-type">{a.action_type.replace(/_/g, ' ')}</div>
             <div className="description">{a.description}</div>
             {a.reasoning && (
-              <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '6px' }}>
-                {a.reasoning}
-              </div>
+              <div className="reasoning">{a.reasoning}</div>
             )}
             <div className="approval-buttons">
               <button className="btn btn-approve" onClick={() => handleDecision(a.id, 'approved')}>
@@ -68,6 +92,24 @@ export default function ApprovalQueue({ apiUrl }: Props) {
           </div>
         ))
       )}
+
+      <div className="kill-switch-section">
+        <div className="kill-switch-header">Emergency Controls</div>
+        <div className="kill-switch-row">
+          <span className={`kill-switch-status ${killActive ? 'armed' : ''}`}>
+            {killActive
+              ? 'Kill switch engaged. CIO approval needed to deactivate.'
+              : 'Closes all open positions immediately.'}
+          </span>
+          <button
+            className={`btn-kill ${killActive ? 'armed' : ''}`}
+            onClick={handleKillSwitch}
+            disabled={killActive}
+          >
+            {killActive ? 'Armed' : 'Flatten All'}
+          </button>
+        </div>
+      </div>
     </div>
   )
 }
