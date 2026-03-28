@@ -98,11 +98,11 @@ function App() {
       </header>
 
       <div className="grid">
-        <div className="panel panel-portfolio">
-          <PortfolioOverview apiUrl={API_URL} />
-        </div>
         <div className="panel panel-risk">
           <RiskConsole apiUrl={API_URL} />
+        </div>
+        <div className="panel panel-portfolio">
+          <PortfolioOverview apiUrl={API_URL} />
         </div>
         <div className="panel panel-health">
           <SystemHealth apiUrl={API_URL} />

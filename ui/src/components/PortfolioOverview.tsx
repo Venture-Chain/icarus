@@ -59,59 +59,59 @@ export default function PortfolioOverview({ apiUrl }: Props) {
 
   const pnlPositive = data.daily_pnl >= 0
   const pnlSign = pnlPositive ? '+' : ''
-  const netExposurePct = Math.abs(data.net_exposure) * 100
-  const grossExposurePct = Math.min((data.gross_exposure * 100) / 200, 100)
+  const netPct = Math.abs(data.net_exposure) * 100
+  const grossPct = data.gross_exposure * 100
 
   return (
     <>
-      <h2>Portfolio Overview</h2>
+      <h2>Portfolio</h2>
 
-      <div className="portfolio-hero">
-        <div className="portfolio-hero-col">
-          <div className="portfolio-hero-label">Portfolio Value</div>
-          <div className="portfolio-value">
-            ${fmt(data.portfolio_value)}
-          </div>
+      <div className="pf-value-block">
+        <div className="pf-value-label">Total Value</div>
+        <div className="pf-value-number">${fmt(data.portfolio_value)}</div>
+      </div>
+
+      <div className="pf-pnl-block">
+        <div className="pf-value-label">Daily P&amp;L</div>
+        <div className={`pf-pnl-number ${pnlPositive ? 'positive' : 'negative'}`}>
+          {pnlSign}{fmtUsd(data.daily_pnl)}
         </div>
-
-        <div className="portfolio-hero-col">
-          <div className="portfolio-hero-label">Daily P&amp;L</div>
-          <div className={`portfolio-pnl ${pnlPositive ? 'positive' : 'negative'}`}>
-            {pnlSign}{fmtUsd(data.daily_pnl)}
-          </div>
-          <div className={`portfolio-pnl-pct ${pnlPositive ? 'positive' : 'negative'}`}>
-            {pnlSign}{fmt(data.daily_pnl_pct)}%
-          </div>
-        </div>
-
-        <div className="portfolio-hero-col">
-          <div className="portfolio-hero-label">Open Positions</div>
-          <div className="portfolio-positions">{data.open_positions}</div>
-          <div className="portfolio-buying-label">Buying Power</div>
-          <div className="portfolio-buying-value">{fmtUsd(data.buying_power)}</div>
+        <div className={`pf-pnl-pct ${pnlPositive ? 'positive' : 'negative'}`}>
+          {pnlSign}{fmt(data.daily_pnl_pct)}%
         </div>
       </div>
 
-      <div className="exposure-bars">
-        <div className="exposure-bar-row">
-          <span className="exposure-bar-label">Net Exposure</span>
-          <div className="exposure-bar">
-            <div
-              className="exposure-bar-fill"
-              style={{ width: `${Math.min((netExposurePct / 50) * 100, 100)}%` }}
-            />
-          </div>
-          <span className="exposure-bar-value">{fmt(netExposurePct, 1)}%</span>
+      <div className="pf-stats">
+        <div className="pf-stat-row">
+          <span className="pf-stat-label">Positions</span>
+          <span className="pf-stat-value">{data.open_positions}</span>
         </div>
-        <div className="exposure-bar-row">
-          <span className="exposure-bar-label">Gross Exposure</span>
+        <div className="pf-stat-row">
+          <span className="pf-stat-label">Buying Power</span>
+          <span className="pf-stat-value">{fmtUsd(data.buying_power)}</span>
+        </div>
+      </div>
+
+      <div className="pf-exposure">
+        <div className="pf-exposure-row">
+          <span className="pf-stat-label">Net Exp.</span>
           <div className="exposure-bar">
             <div
               className="exposure-bar-fill"
-              style={{ width: `${grossExposurePct}%` }}
+              style={{ width: `${Math.min((netPct / 50) * 100, 100)}%` }}
             />
           </div>
-          <span className="exposure-bar-value">{fmt(data.gross_exposure * 100, 1)}%</span>
+          <span className="pf-exp-val">{fmt(netPct, 1)}%</span>
+        </div>
+        <div className="pf-exposure-row">
+          <span className="pf-stat-label">Gross Exp.</span>
+          <div className="exposure-bar">
+            <div
+              className="exposure-bar-fill"
+              style={{ width: `${Math.min((grossPct / 200) * 100, 100)}%` }}
+            />
+          </div>
+          <span className="pf-exp-val">{fmt(grossPct, 1)}%</span>
         </div>
       </div>
     </>
