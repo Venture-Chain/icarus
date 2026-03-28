@@ -21,6 +21,8 @@ async def get_risk_metrics():
         "gross_exposure": 0,
         "beta": 0,
         "sharpe": 0,
+        "portfolio_value": 0,
+        "largest_position_pct": 0,
     }
 
 

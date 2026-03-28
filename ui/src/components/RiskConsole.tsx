@@ -52,7 +52,7 @@ export default function RiskConsole({ apiUrl }: Props) {
       try {
         const resp = await fetch(`${apiUrl}/portfolio/risk`)
         const data = await resp.json()
-        setRisk(data)
+        setRisk({ ...defaultRisk, ...data })
       } catch {}
     }
     fetchRisk()
