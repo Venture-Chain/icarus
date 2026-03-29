@@ -38,10 +38,13 @@ function isMarketOpen(date: Date): boolean {
   return minutes >= 9 * 60 + 30 && minutes < 16 * 60
 }
 
+type View = 'control-room' | 'quantum-lab'
+
 function App() {
   const [alerts, setAlerts] = useState<Alert[]>([])
   const [connected, setConnected] = useState(false)
   const [quantumAvailable, setQuantumAvailable] = useState(false)
+  const [view, setView] = useState<View>('control-room')
   const wsRef = useRef<WebSocket | null>(null)
   const now = useCurrentTime()
 
@@ -93,7 +96,24 @@ function App() {
       <header className="control-room-header">
         <div className="header-brand">
           <span className="header-title">ICARUS</span>
-          <span className="header-subtitle">Control Room</span>
+          {quantumAvailable ? (
+            <div className="header-nav">
+              <button
+                className={`header-nav-btn ${view === 'control-room' ? 'active' : ''}`}
+                onClick={() => setView('control-room')}
+              >
+                Control Room
+              </button>
+              <button
+                className={`header-nav-btn quantum ${view === 'quantum-lab' ? 'active' : ''}`}
+                onClick={() => setView('quantum-lab')}
+              >
+                Quantum Lab
+              </button>
+            </div>
+          ) : (
+            <span className="header-subtitle">Control Room</span>
+          )}
         </div>
         <div className="header-right">
           <span className={`market-status ${marketOpen ? 'open' : 'closed'}`}>
@@ -106,31 +126,32 @@ function App() {
         </div>
       </header>
 
-      <div className={`grid ${quantumAvailable ? 'grid-with-quantum' : ''}`}>
-        <div className="panel panel-risk">
-          <RiskConsole apiUrl={API_URL} />
-        </div>
-        <div className="panel panel-portfolio">
-          <PortfolioOverview apiUrl={API_URL} />
-        </div>
-        <div className="panel panel-health">
-          <SystemHealth apiUrl={API_URL} />
-        </div>
-        <div className="panel panel-strategies">
-          <StrategyCommand apiUrl={API_URL} />
-        </div>
-        <div className="panel panel-approvals">
-          <ApprovalQueue apiUrl={API_URL} />
-        </div>
-        <div className="panel panel-alerts">
-          <AlertFeed alerts={alerts} />
-        </div>
-        {quantumAvailable && (
-          <div className="panel panel-quantum">
-            <QuantumLab apiUrl={API_URL} />
+      {view === 'control-room' ? (
+        <div className="grid">
+          <div className="panel panel-risk">
+            <RiskConsole apiUrl={API_URL} />
           </div>
-        )}
-      </div>
+          <div className="panel panel-portfolio">
+            <PortfolioOverview apiUrl={API_URL} />
+          </div>
+          <div className="panel panel-health">
+            <SystemHealth apiUrl={API_URL} />
+          </div>
+          <div className="panel panel-strategies">
+            <StrategyCommand apiUrl={API_URL} />
+          </div>
+          <div className="panel panel-approvals">
+            <ApprovalQueue apiUrl={API_URL} />
+          </div>
+          <div className="panel panel-alerts">
+            <AlertFeed alerts={alerts} />
+          </div>
+        </div>
+      ) : (
+        <div className="quantum-view">
+          <QuantumLab apiUrl={API_URL} />
+        </div>
+      )}
     </div>
   )
 }
