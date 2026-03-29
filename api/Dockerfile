@@ -2,6 +2,8 @@ FROM python:3.12-slim
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=UTC
+RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone \
+    && apt-get update && apt-get install -y --no-install-recommends tzdata && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
