@@ -70,6 +70,17 @@ CREATE TABLE social_posts (
 SELECT create_hypertable('social_posts', 'time');
 CREATE INDEX idx_social_ticker ON social_posts (ticker, time DESC);
 
+-- Broker accounts registry
+CREATE TABLE broker_accounts (
+    id VARCHAR(50) PRIMARY KEY,
+    broker_type VARCHAR(20) NOT NULL CHECK (broker_type IN ('ib', 'alpaca')),
+    mode VARCHAR(20) NOT NULL CHECK (mode IN ('paper', 'live')),
+    display_name VARCHAR(200),
+    config JSONB DEFAULT '{}',
+    status VARCHAR(20) DEFAULT 'active' CHECK (status IN ('active', 'inactive', 'error')),
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- Strategy registry
 CREATE TABLE strategies (
     id SERIAL PRIMARY KEY,
@@ -83,6 +94,18 @@ CREATE TABLE strategies (
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- Strategy-to-account deployment mapping
+CREATE TABLE strategy_deployments (
+    id SERIAL PRIMARY KEY,
+    strategy_id INTEGER NOT NULL REFERENCES strategies(id),
+    account_id VARCHAR(50) NOT NULL REFERENCES broker_accounts(id),
+    status VARCHAR(20) DEFAULT 'active' CHECK (status IN ('active', 'paused', 'stopped')),
+    deployed_at TIMESTAMPTZ DEFAULT NOW(),
+    stopped_at TIMESTAMPTZ,
+    UNIQUE(strategy_id, account_id)
+);
+CREATE INDEX idx_deployments_account ON strategy_deployments (account_id, status);
 
 -- Signals (hypertable)
 CREATE TABLE signals (
@@ -103,6 +126,8 @@ CREATE TABLE orders (
     id SERIAL PRIMARY KEY,
     signal_id BIGINT,
     ib_order_id INTEGER,
+    broker_order_id VARCHAR(100),
+    account_id VARCHAR(50),
     ticker VARCHAR(20) NOT NULL,
     direction VARCHAR(10) NOT NULL,
     order_type VARCHAR(20) NOT NULL,
@@ -121,6 +146,7 @@ CREATE INDEX idx_orders_status ON orders (status, created_at DESC);
 CREATE TABLE trades (
     id SERIAL PRIMARY KEY,
     order_id INTEGER REFERENCES orders(id),
+    account_id VARCHAR(50),
     ticker VARCHAR(20) NOT NULL,
     direction VARCHAR(10) NOT NULL,
     quantity DOUBLE PRECISION NOT NULL,
@@ -135,7 +161,8 @@ CREATE INDEX idx_trades_ticker ON trades (ticker, executed_at DESC);
 -- Positions
 CREATE TABLE positions (
     id SERIAL PRIMARY KEY,
-    ticker VARCHAR(20) NOT NULL UNIQUE,
+    ticker VARCHAR(20) NOT NULL,
+    account_id VARCHAR(50),
     quantity DOUBLE PRECISION NOT NULL,
     avg_cost DOUBLE PRECISION NOT NULL,
     current_price DOUBLE PRECISION,
@@ -143,7 +170,8 @@ CREATE TABLE positions (
     strategy_id INTEGER REFERENCES strategies(id),
     hedge_for INTEGER,
     opened_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW()
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(ticker, account_id)
 );
 
 -- Research log
@@ -176,6 +204,7 @@ CREATE TABLE backtest_runs (
 -- Risk snapshots (hypertable)
 CREATE TABLE risk_snapshots (
     time TIMESTAMPTZ NOT NULL,
+    account_id VARCHAR(50),
     portfolio_value DOUBLE PRECISION,
     var_95 DOUBLE PRECISION,
     cvar_95 DOUBLE PRECISION,
@@ -256,6 +285,7 @@ CREATE INDEX idx_cost_models_ticker ON cost_models (ticker);
 -- Kill switch log
 CREATE TABLE kill_switch_log (
     id SERIAL PRIMARY KEY,
+    account_id VARCHAR(50),
     triggered_at TIMESTAMPTZ DEFAULT NOW(),
     reason TEXT NOT NULL,
     trigger_type VARCHAR(50) NOT NULL,

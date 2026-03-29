@@ -1,7 +1,8 @@
 """
 Order execution engine.
-Converts signals to IB orders after risk engine approval.
+Converts signals to orders after risk engine approval.
 Handles position sizing and order lifecycle.
+Routes orders to the correct broker via AccountRegistry.
 """
 import logging
 from dataclasses import dataclass
@@ -33,7 +34,8 @@ class OrderRequest:
 
 @dataclass
 class OrderResult:
-    order_id: int | None = None
+    order_id: str | None = None
+    account_id: str = ""
     status: str = "pending"
     ticker: str = ""
     direction: str = ""
@@ -47,14 +49,33 @@ class ExecutionEngine:
 
     def __init__(
         self,
-        ib_client=None,
+        account_registry=None,
         risk_engine: RiskEngine | None = None,
         cost_model: CostModel | None = None,
+        ib_client=None,
     ):
-        self.ib_client = ib_client
+        self.registry = account_registry
         self.risk_engine = risk_engine or RiskEngine()
         self.cost_model = cost_model or CostModel()
         self.live_trading = False
+
+        # Backward compat: wrap a bare ib_client in a registry
+        if ib_client and not account_registry:
+            from services.account_registry import AccountRegistry
+            self.registry = AccountRegistry()
+            self.registry.register(ib_client)
+
+    def _resolve_broker(self, account_id: str | None = None):
+        """Get broker by account_id, or first available."""
+        if not self.registry:
+            return None
+        if account_id:
+            return self.registry.get(account_id)
+        # Default: first connected broker
+        for broker in self.registry.all():
+            if broker.connected:
+                return broker
+        return None
 
     async def execute_signal(
         self,
@@ -62,6 +83,7 @@ class ExecutionEngine:
         positions: list[Position],
         portfolio_value: float,
         current_price: float,
+        account_id: str | None = None,
     ) -> OrderResult:
         """Process a signal through risk checks and execute."""
         result = OrderResult(ticker=signal.ticker, direction=signal.direction)
@@ -100,18 +122,23 @@ class ExecutionEngine:
         )
         result.estimated_cost = cost.total
 
-        # Execute via IB
-        if self.ib_client and self.ib_client.connected:
+        # Route to broker
+        broker = self._resolve_broker(account_id)
+        if broker and broker.connected:
             action = "SELL" if signal.direction in ("short", "close") else "BUY"
-            order_result = await self.ib_client.place_order(
+            order = await broker.place_order(
                 ticker=signal.ticker,
                 action=action,
                 quantity=quantity,
                 order_type="MKT",
             )
-            result.order_id = order_result.get("order_id")
+            result.order_id = order.broker_order_id
+            result.account_id = broker.account_id
             result.status = "submitted"
-            log.info(f"order submitted: {action} {quantity} {signal.ticker}")
+            log.info(
+                "order submitted: %s %s %s -> %s",
+                action, quantity, signal.ticker, broker.account_id,
+            )
         else:
             result.status = "simulated"
             log.info(f"simulated: {signal.direction} {quantity} {signal.ticker} @ {current_price}")
@@ -148,35 +175,42 @@ class ExecutionEngine:
 
         return max(shares, 0)
 
-    async def flatten_all(self, positions: list[Position]) -> list[OrderResult]:
-        """Emergency: close all positions. Used by kill switch."""
+    async def flatten_account(self, account_id: str) -> list[OrderResult]:
+        """Flatten all positions for a specific broker account."""
+        broker = self._resolve_broker(account_id)
+        if not broker or not broker.connected:
+            return []
+
+        positions = await broker.get_positions()
         results = []
         for pos in positions:
             if pos.quantity == 0:
                 continue
-
             action = "SELL" if pos.quantity > 0 else "BUY"
-            quantity = abs(pos.quantity)
-
-            result = OrderResult(
+            order = await broker.place_order(
+                ticker=pos.ticker,
+                action=action,
+                quantity=abs(pos.quantity),
+                order_type="MKT",
+            )
+            results.append(OrderResult(
+                order_id=order.broker_order_id,
+                account_id=account_id,
                 ticker=pos.ticker,
                 direction="close",
-                quantity=quantity,
-            )
+                quantity=abs(pos.quantity),
+                status=order.status,
+            ))
+            log.warning("flatten %s: %s %s %s", account_id, action, abs(pos.quantity), pos.ticker)
+        return results
 
-            if self.ib_client and self.ib_client.connected:
-                order_result = await self.ib_client.place_order(
-                    ticker=pos.ticker,
-                    action=action,
-                    quantity=quantity,
-                    order_type="MKT",
-                )
-                result.order_id = order_result.get("order_id")
-                result.status = "submitted"
-            else:
-                result.status = "simulated"
-
-            results.append(result)
-            log.warning(f"flatten: {action} {quantity} {pos.ticker}")
-
+    async def flatten_all(self) -> dict[str, list[OrderResult]]:
+        """Emergency: flatten all positions across all broker accounts."""
+        if not self.registry:
+            return {}
+        results = {}
+        for broker in self.registry.all():
+            account_results = await self.flatten_account(broker.account_id)
+            if account_results:
+                results[broker.account_id] = account_results
         return results

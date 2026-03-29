@@ -1,23 +1,31 @@
 FROM python:3.12-slim
 
-ENV DEBIAN_FRONTEND=noninteractive
-ENV TZ=UTC
-RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone \
-    && apt-get update && apt-get install -y --no-install-recommends tzdata && rm -rf /var/lib/apt/lists/*
+ENV DEBIAN_FRONTEND=noninteractive \
+    TZ=UTC \
+    PYTHONDONTWRITEBYTECODE=1
+
+# Pre-configure timezone so no package triggers the interactive tzdata prompt.
+RUN echo "Etc/UTC" > /etc/timezone \
+    && ln -snf /usr/share/zoneinfo/Etc/UTC /etc/localtime \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends tzdata \
+    && dpkg-reconfigure -f noninteractive tzdata \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN DEBIAN_FRONTEND=noninteractive pip install --no-cache-dir -r requirements.txt
 
 # ibapi is not on PyPI. Install from official IBKR wheel.
 # Download from: https://interactivebrokers.github.io/
-# For now, ibapi is optional (only needed when IB Gateway is connected).
-RUN pip install --no-cache-dir ibapi 2>/dev/null || echo "ibapi not available on PyPI, IB features disabled until manually installed"
+RUN pip install --no-cache-dir ibapi 2>/dev/null \
+    || echo "ibapi not available on PyPI, IB features disabled until manually installed"
 
 # PyTorch CPU-only (slim, ~200MB instead of 2GB).
-# For GPU inference, mount a CUDA-enabled torch from the host.
-RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
+# Optional: falls back gracefully if the wheel index has no match for this platform.
+RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu 2>/dev/null \
+    || echo "torch CPU wheel not available for this platform, ML features require manual install"
 
 COPY . .
 

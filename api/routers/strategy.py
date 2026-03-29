@@ -1,4 +1,4 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 from pydantic import BaseModel
 
 router = APIRouter()
@@ -14,6 +14,7 @@ class StrategyCreate(BaseModel):
 
 class StrategyDeploy(BaseModel):
     mode: str  # backtest, paper, live
+    account_id: str = ""  # broker account to deploy to
 
 
 @router.get("/")
@@ -42,5 +43,26 @@ async def get_strategy_performance(strategy_id: int):
 
 @router.put("/{strategy_id}/deploy")
 async def deploy_strategy(strategy_id: int, deploy: StrategyDeploy):
-    """Deploy strategy to paper or live (requires CIO approval for live)."""
-    return {"id": strategy_id, "mode": deploy.mode, "status": "pending_approval"}
+    """Deploy strategy to a broker account (requires CIO approval for live)."""
+    return {
+        "id": strategy_id,
+        "mode": deploy.mode,
+        "account_id": deploy.account_id,
+        "status": "pending_approval",
+    }
+
+
+@router.get("/{strategy_id}/deployments")
+async def get_deployments(strategy_id: int):
+    """List all broker accounts this strategy is deployed to."""
+    return {"strategy_id": strategy_id, "deployments": []}
+
+
+@router.delete("/{strategy_id}/deployments/{account_id}")
+async def stop_deployment(strategy_id: int, account_id: str):
+    """Stop a strategy deployment on a specific broker account."""
+    return {
+        "strategy_id": strategy_id,
+        "account_id": account_id,
+        "status": "stopped",
+    }

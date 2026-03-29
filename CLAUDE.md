@@ -1,9 +1,8 @@
 # Icarus: Quantitative Trading Framework
 
-Open-source (Apache 2.0) quantitative trading platform with Interactive Brokers integration.
-Built by Venture Chain. Provides infrastructure for systematic trading: risk management,
-execution, backtesting, portfolio optimization, and data ingestion. Users implement their
-own strategies via the plugin system.
+Quantitative trading platform with multi-broker orchestration, pluggable strategies, and real-time
+risk controls. Built by Venture Chain (Apache 2.0). Deploy strategies to IB, Alpaca, or multiple
+accounts simultaneously. Users implement their own strategies via the plugin system.
 
 Proprietary research lives separately in `../icarus-research/`.
 

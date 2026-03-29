@@ -1,8 +1,8 @@
 # Icarus
 
-Open-source quantitative trading framework with Interactive Brokers integration.
+Quantitative trading platform with multi-broker orchestration, pluggable strategies, and real-time risk controls.
 
-Built by [Venture Chain](https://venturechain.co).
+Built by [Venture Chain](https://venture-chain.com).
 
 ## What Icarus Does
 
@@ -15,7 +15,7 @@ Icarus is the infrastructure for running a systematic trading operation:
 - **Hedging**: Beta hedging, sector hedging, pair trading
 - **ML Pipeline**: PyTorch + CUDA for price prediction, volatility forecasting, regime detection
 - **Data Connectors**: Finnhub, Alpha Vantage, yfinance, SEC EDGAR, Reddit, StockTwits
-- **Execution**: IB Gateway integration for paper and live trading
+- **Multi-Broker Execution**: Deploy strategies to IB, Alpaca, or multiple accounts simultaneously (paper and live)
 - **Control Room**: React dashboard for monitoring, risk limits, kill switch, and CIO approvals
 - **AI Integration**: Built-in Claude skill definitions for AI-driven research workflows
 
@@ -96,7 +96,7 @@ Place it in `api/strategies/` and it will be auto-discovered.
 - **Redis** 7 (cache + streams)
 - **React** + TypeScript + Vite
 - **PyTorch** + CUDA
-- **Interactive Brokers** (official ibapi)
+- **Interactive Brokers** + **Alpaca** (multi-broker)
 - **Docker Compose**
 
 ## License

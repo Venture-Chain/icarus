@@ -19,6 +19,13 @@ class Settings(BaseSettings):
     alpaca_api_key: str = ""
     alpaca_api_secret: str = ""
 
+    # Multi-broker orchestration
+    broker_accounts: str = "[]"  # JSON array of account configs
+    alpaca_paper_api_key: str = ""
+    alpaca_paper_api_secret: str = ""
+    alpaca_live_api_key: str = ""
+    alpaca_live_api_secret: str = ""
+
     # Strategy loading
     strategy_dirs: list[str] = ["strategies"]
     research_path: str = ""

@@ -1352,6 +1352,64 @@ body {
   margin-top: 4px;
 }
 
+/* Multi-broker UI elements */
+
+.broker-badge {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-family: 'JetBrains Mono', monospace;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  margin-left: 6px;
+}
+
+.broker-badge.badge-live {
+  color: var(--red);
+  border-color: rgba(255, 23, 68, 0.3);
+  background: var(--red-glow);
+}
+
+.broker-badge.badge-paper {
+  color: var(--cyan);
+  border-color: rgba(0, 229, 255, 0.2);
+  background: rgba(0, 229, 255, 0.06);
+}
+
+.account-selector {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-primary);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  padding: 4px 8px;
+  cursor: pointer;
+  outline: none;
+}
+
+.account-selector:focus {
+  border-color: var(--accent);
+}
+
+.account-selector option {
+  background: var(--bg-panel);
+  color: var(--text-primary);
+}
+
+.kill-target-selector {
+  width: 100%;
+  margin-bottom: 8px;
+  padding: 6px 10px;
+  font-size: 12px;
+  text-align: center;
+}
+
 /* Reduced motion */
 @media (prefers-reduced-motion: reduce) {
   * {

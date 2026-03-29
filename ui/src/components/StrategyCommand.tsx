@@ -7,6 +7,7 @@ interface Strategy {
   status: string
   risk_budget: number
   description: string
+  account_id?: string
 }
 
 interface Props {
@@ -75,6 +76,9 @@ export default function StrategyCommand({ apiUrl }: Props) {
               </div>
               <div className="strategy-meta">
                 <span className={`pill ${modeClass(s.mode)}`}>{s.mode}</span>
+                {s.account_id && (
+                  <span className="broker-badge">{s.account_id}</span>
+                )}
                 <span className={`status-dot ${s.status === 'active' ? 'active' : 'inactive'}`} />
               </div>
             </div>

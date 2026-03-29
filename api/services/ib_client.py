@@ -1,6 +1,7 @@
 """
 Interactive Brokers client service.
 Wraps official ibapi in async interface using threading bridge.
+Implements BaseBroker for multi-broker orchestration.
 """
 import asyncio
 import threading
@@ -14,6 +15,14 @@ from ibapi.order import Order
 from ibapi.wrapper import EWrapper
 
 from config import settings
+from services.broker_base import (
+    AccountMode,
+    AccountSummary,
+    BaseBroker,
+    BrokerOrder,
+    BrokerPosition,
+    BrokerType,
+)
 
 
 class IBWrapper(EWrapper):
@@ -100,17 +109,42 @@ class IBWrapper(EWrapper):
         pass
 
 
-class IBClient:
+class IBClient(BaseBroker):
     """Async interface to Interactive Brokers."""
 
-    def __init__(self) -> None:
-        self.host: str = settings.ib_host
-        self.port: int = settings.ib_port
-        self.client_id: int = 1
-        self.connected: bool = False
+    def __init__(
+        self,
+        account_id: str = "ib-default",
+        mode: AccountMode = AccountMode.PAPER,
+        host: str | None = None,
+        port: int | None = None,
+        client_id: int = 1,
+    ) -> None:
+        self._account_id = account_id
+        self._mode = mode
+        self.host: str = host or settings.ib_host
+        self.port: int = port or settings.ib_port
+        self.client_id: int = client_id
+        self._connected: bool = False
         self._wrapper: IBWrapper = IBWrapper()
         self._client: EClient = EClient(self._wrapper)
         self._thread: threading.Thread | None = None
+
+    @property
+    def broker_type(self) -> BrokerType:
+        return BrokerType.IB
+
+    @property
+    def account_id(self) -> str:
+        return self._account_id
+
+    @property
+    def mode(self) -> AccountMode:
+        return self._mode
+
+    @property
+    def connected(self) -> bool:
+        return self._connected
 
     async def connect(self) -> bool:
         """Connect to IB Gateway. Returns True on success."""
@@ -125,19 +159,19 @@ class IBClient:
 
         try:
             await asyncio.wait_for(event.wait(), timeout=10)
-            self.connected = True
+            self._connected = True
             return True
         except asyncio.TimeoutError:
-            self.connected = False
+            self._connected = False
             return False
 
     async def disconnect(self) -> None:
         """Disconnect from IB Gateway."""
-        if self.connected:
+        if self._connected:
             self._client.disconnect()
-            self.connected = False
+            self._connected = False
 
-    async def get_account_summary(self) -> dict[str, Any]:
+    async def get_account_summary(self) -> AccountSummary:
         """Get account balance, buying power, P&L."""
         self._wrapper._account_summary = {}
         event = asyncio.Event()
@@ -154,9 +188,29 @@ class IBClient:
             pass
 
         self._client.cancelAccountSummary(9001)
-        return self._wrapper._account_summary
 
-    async def get_positions(self) -> list[dict]:
+        raw = self._wrapper._account_summary
+
+        def _val(tag: str) -> float:
+            entry = raw.get(tag)
+            if entry:
+                try:
+                    return float(entry["value"])
+                except (ValueError, KeyError):
+                    pass
+            return 0.0
+
+        return AccountSummary(
+            account_id=self._account_id,
+            net_liquidation=_val("NetLiquidation"),
+            buying_power=_val("BuyingPower"),
+            cash=_val("TotalCashValue"),
+            unrealized_pnl=_val("UnrealizedPnL"),
+            realized_pnl=_val("RealizedPnL"),
+            gross_position_value=_val("GrossPositionValue"),
+        )
+
+    async def get_positions(self) -> list[BrokerPosition]:
         """Get current positions from IB."""
         self._wrapper._positions = []
         event = asyncio.Event()
@@ -170,7 +224,15 @@ class IBClient:
             pass
 
         self._client.cancelPositions()
-        return self._wrapper._positions
+        return [
+            BrokerPosition(
+                ticker=p["ticker"],
+                quantity=p["quantity"],
+                avg_cost=p["avg_cost"],
+                account_id=self._account_id,
+            )
+            for p in self._wrapper._positions
+        ]
 
     async def get_historical_data(
         self,
@@ -215,8 +277,8 @@ class IBClient:
         quantity: float,
         order_type: str = "MKT",
         limit_price: float | None = None,
-    ) -> dict:
-        """Place an order. Returns order ID and initial status."""
+    ) -> BrokerOrder:
+        """Place an order. Returns BrokerOrder with status."""
         contract = self._make_stock_contract(ticker)
 
         order = Order()
@@ -239,13 +301,39 @@ class IBClient:
         except asyncio.TimeoutError:
             pass
 
-        status = self._wrapper._order_status.get(order_id, {"status": "submitted"})
-        return {"order_id": order_id, **status}
+        status_data = self._wrapper._order_status.get(order_id, {})
+        return BrokerOrder(
+            broker_order_id=str(order_id),
+            status=status_data.get("status", "submitted"),
+            ticker=ticker,
+            action=action.upper(),
+            quantity=abs(quantity),
+            filled_quantity=status_data.get("filled", 0),
+            avg_fill_price=status_data.get("avg_fill_price", 0),
+            account_id=self._account_id,
+        )
 
-    async def cancel_order(self, order_id: int) -> dict:
+    async def cancel_order(self, broker_order_id: str) -> BrokerOrder:
         """Cancel a pending order."""
-        self._client.cancelOrder(order_id, "")
-        return {"order_id": order_id, "status": "cancel_requested"}
+        ib_order_id = int(broker_order_id)
+        self._client.cancelOrder(ib_order_id, "")
+        return BrokerOrder(
+            broker_order_id=broker_order_id,
+            status="cancel_requested",
+            account_id=self._account_id,
+        )
+
+    async def get_order_status(self, broker_order_id: str) -> BrokerOrder:
+        """Get current status of an order."""
+        ib_order_id = int(broker_order_id)
+        status_data = self._wrapper._order_status.get(ib_order_id, {})
+        return BrokerOrder(
+            broker_order_id=broker_order_id,
+            status=status_data.get("status", "unknown"),
+            filled_quantity=status_data.get("filled", 0),
+            avg_fill_price=status_data.get("avg_fill_price", 0),
+            account_id=self._account_id,
+        )
 
     def _make_stock_contract(self, ticker: str) -> Contract:
         """Create a US stock contract."""
