@@ -18,6 +18,7 @@ interface RiskData {
 
 interface Props {
   apiUrl: string
+  selectedAccount: string
 }
 
 const defaultRisk: RiskData = {
@@ -66,7 +67,7 @@ function secondsAgo(ts: number): string {
   return `${Math.floor(s / 60)}m ago`
 }
 
-export default function RiskConsole({ apiUrl }: Props) {
+export default function RiskConsole({ apiUrl, selectedAccount }: Props) {
   const [risk, setRisk] = useState<RiskData>(defaultRisk)
   const [lastFetch, setLastFetch] = useState<number>(Date.now())
   const [tick, setTick] = useState(0)
@@ -74,7 +75,8 @@ export default function RiskConsole({ apiUrl }: Props) {
   useEffect(() => {
     const fetchRisk = async () => {
       try {
-        const resp = await fetch(`${apiUrl}/portfolio/risk`)
+        const params = selectedAccount ? `?account_id=${selectedAccount}` : ''
+        const resp = await fetch(`${apiUrl}/portfolio/risk${params}`)
         const data = await resp.json()
         setRisk({ ...defaultRisk, ...data })
         setLastFetch(Date.now())
@@ -85,7 +87,7 @@ export default function RiskConsole({ apiUrl }: Props) {
     fetchRisk()
     const id = setInterval(fetchRisk, 10000)
     return () => clearInterval(id)
-  }, [apiUrl])
+  }, [apiUrl, selectedAccount])
 
   useEffect(() => {
     const id = setInterval(() => setTick(t => t + 1), 5000)

@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import './App.css'
+import AccountCards from './components/AccountCards'
 import PortfolioOverview from './components/PortfolioOverview'
 import StrategyCommand from './components/StrategyCommand'
 import RiskConsole from './components/RiskConsole'
@@ -17,6 +18,7 @@ export interface Alert {
   message: string
   severity: 'info' | 'warning' | 'critical'
   timestamp: string
+  account_id?: string
 }
 
 function useCurrentTime() {
@@ -45,6 +47,7 @@ function App() {
   const [connected, setConnected] = useState(false)
   const [quantumAvailable, setQuantumAvailable] = useState(false)
   const [view, setView] = useState<View>('control-room')
+  const [selectedAccount, setSelectedAccount] = useState('')
   const wsRef = useRef<WebSocket | null>(null)
   const now = useCurrentTime()
 
@@ -127,26 +130,33 @@ function App() {
       </header>
 
       {view === 'control-room' ? (
-        <div className="grid">
-          <div className="panel panel-risk">
-            <RiskConsole apiUrl={API_URL} />
+        <>
+          <AccountCards
+            apiUrl={API_URL}
+            selectedAccount={selectedAccount}
+            onSelectAccount={setSelectedAccount}
+          />
+          <div className="grid">
+            <div className="panel panel-risk">
+              <RiskConsole apiUrl={API_URL} selectedAccount={selectedAccount} />
+            </div>
+            <div className="panel panel-portfolio">
+              <PortfolioOverview apiUrl={API_URL} selectedAccount={selectedAccount} />
+            </div>
+            <div className="panel panel-health">
+              <SystemHealth apiUrl={API_URL} />
+            </div>
+            <div className="panel panel-strategies">
+              <StrategyCommand apiUrl={API_URL} />
+            </div>
+            <div className="panel panel-approvals">
+              <ApprovalQueue apiUrl={API_URL} selectedAccount={selectedAccount} />
+            </div>
+            <div className="panel panel-alerts">
+              <AlertFeed alerts={alerts} selectedAccount={selectedAccount} />
+            </div>
           </div>
-          <div className="panel panel-portfolio">
-            <PortfolioOverview apiUrl={API_URL} />
-          </div>
-          <div className="panel panel-health">
-            <SystemHealth apiUrl={API_URL} />
-          </div>
-          <div className="panel panel-strategies">
-            <StrategyCommand apiUrl={API_URL} />
-          </div>
-          <div className="panel panel-approvals">
-            <ApprovalQueue apiUrl={API_URL} />
-          </div>
-          <div className="panel panel-alerts">
-            <AlertFeed alerts={alerts} />
-          </div>
-        </div>
+        </>
       ) : (
         <div className="quantum-view">
           <QuantumLab apiUrl={API_URL} />

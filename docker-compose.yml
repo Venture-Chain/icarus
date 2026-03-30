@@ -5,7 +5,7 @@ services:
       - "5104:4003"
       - "5105:6080"
     volumes:
-      - ib-gateway-data:/opt/ibgateway
+      - ib-gateway-data:/root/Jts
     restart: unless-stopped
 
   icarus-api:

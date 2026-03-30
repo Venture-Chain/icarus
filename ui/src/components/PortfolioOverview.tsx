@@ -10,15 +10,9 @@ interface PortfolioData {
   gross_exposure: number
 }
 
-interface BrokerAccount {
-  account_id: string
-  broker_type: string
-  mode: string
-  connected: boolean
-}
-
 interface Props {
   apiUrl: string
+  selectedAccount: string
 }
 
 const defaultPortfolio: PortfolioData = {
@@ -46,17 +40,8 @@ function fmtUsd(n: number): string {
   return `${sign}$${fmt(abs)}`
 }
 
-export default function PortfolioOverview({ apiUrl }: Props) {
+export default function PortfolioOverview({ apiUrl, selectedAccount }: Props) {
   const [data, setData] = useState<PortfolioData>(defaultPortfolio)
-  const [accounts, setAccounts] = useState<BrokerAccount[]>([])
-  const [selectedAccount, setSelectedAccount] = useState<string>('')
-
-  useEffect(() => {
-    fetch(`${apiUrl}/accounts/`)
-      .then(r => r.json())
-      .then(d => { if (Array.isArray(d)) setAccounts(d) })
-      .catch(() => {})
-  }, [apiUrl])
 
   useEffect(() => {
     const fetchData = async () => {
@@ -81,23 +66,7 @@ export default function PortfolioOverview({ apiUrl }: Props) {
 
   return (
     <>
-      <div className="panel-header-row">
-        <h2>Portfolio</h2>
-        {accounts.length > 1 && (
-          <select
-            className="account-selector"
-            value={selectedAccount}
-            onChange={e => setSelectedAccount(e.target.value)}
-          >
-            <option value="">All Accounts</option>
-            {accounts.map(a => (
-              <option key={a.account_id} value={a.account_id}>
-                {a.account_id} ({a.broker_type})
-              </option>
-            ))}
-          </select>
-        )}
-      </div>
+      <h2>Portfolio</h2>
 
       <div className="pf-value-block">
         <div className="pf-value-label">Total Value</div>

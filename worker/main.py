@@ -125,7 +125,9 @@ class IngestionWorker:
         Runs less frequently to avoid IP blocks on the unofficial API."""
         import yfinance as yf
 
+        backoff = 1800  # normal interval: 30 min
         while self._running:
+            failures = 0
             try:
                 log.info("pulling yfinance daily bars")
                 for ticker in self.watchlist:
@@ -133,6 +135,7 @@ class IngestionWorker:
                         stock = yf.Ticker(ticker)
                         hist = stock.history(period="5d", interval="1d")
                         if hist.empty:
+                            failures += 1
                             continue
                         latest = hist.iloc[-1]
                         await self._publish_price(ticker, "yfinance", {
@@ -143,12 +146,20 @@ class IngestionWorker:
                             "volume": int(latest["Volume"]),
                         })
                     except Exception as e:
+                        failures += 1
                         log.warning("yfinance failed for %s: %s", ticker, e)
                     await asyncio.sleep(2)  # 2s between tickers to stay safe
-                log.info("yfinance daily bars updated")
+                if failures >= len(self.watchlist):
+                    backoff = min(backoff * 2, 7200)  # double up to 2h
+                    log.warning("all yfinance tickers failed, backing off %ds", backoff)
+                else:
+                    backoff = 1800
+                    log.info("yfinance daily bars updated (%d/%d ok)",
+                             len(self.watchlist) - failures, len(self.watchlist))
             except Exception as e:
                 log.error("yfinance loop error: %s", e)
-            await asyncio.sleep(1800)  # 30 min
+                backoff = min(backoff * 2, 7200)
+            await asyncio.sleep(backoff)
 
     # -- News (Finnhub) ---------------------------------------------------
 

@@ -20,4 +20,4 @@ echo " Open http://localhost:5105 to log in"
 echo "==================================================="
 
 # Start IB Gateway directly (you log in via the noVNC browser UI)
-/opt/ibgateway/ibgateway
+/root/Jts/ibgateway/ibgateway
