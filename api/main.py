@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 from contextlib import asynccontextmanager
@@ -9,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from config import settings
 from engines.strategy_engine import StrategyEngine
-from routers import accounts, data, portfolio, research, strategy, quantum
+from routers import accounts, data, notifications, portfolio, research, strategy, quantum
 from services.account_registry import AccountRegistry
 from services.broker_base import AccountMode
 
@@ -85,6 +86,10 @@ async def lifespan(app: FastAPI):
     app.state.redis = aioredis.from_url(settings.redis_url, decode_responses=True)
     log.info("Redis connected")
 
+    # Startup: notifier
+    from services.notifier import Notifier
+    app.state.notifier = Notifier(app.state.db_pool, app.state.redis)
+
     # Startup: strategy engine
     engine = StrategyEngine()
     engine.load_strategies()
@@ -129,6 +134,7 @@ app.include_router(strategy.router, prefix="/strategies", tags=["strategies"])
 app.include_router(portfolio.router, prefix="/portfolio", tags=["portfolio"])
 app.include_router(quantum.router, prefix="/quantum", tags=["quantum"])
 app.include_router(accounts.router, prefix="/accounts", tags=["accounts"])
+app.include_router(notifications.router, prefix="/notifications", tags=["notifications"])
 
 
 @app.websocket("/ws")
@@ -136,10 +142,29 @@ async def websocket_endpoint(websocket: WebSocket):
     """Main WebSocket for Control Room real-time updates."""
     await websocket.accept()
     ws_clients.append(websocket)
+
+    pubsub = websocket.app.state.redis.pubsub()
+    await pubsub.subscribe("icarus:notifications")
+
+    async def _forward_notifications():
+        async for message in pubsub.listen():
+            if message["type"] == "message":
+                try:
+                    await websocket.send_text(message["data"])
+                except Exception:
+                    break
+
+    forward_task = asyncio.create_task(_forward_notifications())
+
     try:
         while True:
             await websocket.receive_text()
     except WebSocketDisconnect:
+        pass
+    finally:
+        forward_task.cancel()
+        await pubsub.unsubscribe("icarus:notifications")
+        await pubsub.close()
         if websocket in ws_clients:
             ws_clients.remove(websocket)
 

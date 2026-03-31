@@ -23,6 +23,17 @@ class DataRequirement:
     data_type: str  # prices, fundamentals, sentiment, filings, social
     lookback_days: int = 252
     sources: list[str] = field(default_factory=list)
+    trigger: bool = False
+
+
+@dataclass
+class SignalContext:
+    """Runtime context passed to strategies during signal computation."""
+    trigger_type: str = "scheduled"  # scheduled, news, smart_money
+    trigger_data: dict = field(default_factory=dict)
+    market_state: dict = field(default_factory=dict)  # VIX, SPY return, etc.
+    capital: float = 0
+    confluence_scores: dict = field(default_factory=dict)  # ticker -> ConfluenceScore
 
 
 class BaseStrategy(ABC):
@@ -44,7 +55,7 @@ class BaseStrategy(ABC):
         ...
 
     @abstractmethod
-    def compute_signals(self, universe: list[str], as_of: date) -> list[Signal]:
+    def compute_signals(self, universe: list[str], as_of: date, context: "SignalContext | None" = None) -> list[Signal]:
         """Generate signals for the given universe on the given date."""
         ...
 

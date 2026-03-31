@@ -6,7 +6,7 @@ from datetime import date
 
 import numpy as np
 
-from .base import BaseStrategy, DataRequirement, Signal
+from .base import BaseStrategy, DataRequirement, Signal, SignalContext
 
 
 class MeanReversionExample(BaseStrategy):
@@ -34,7 +34,7 @@ class MeanReversionExample(BaseStrategy):
         """Inject historical close prices for backtesting."""
         self._price_cache[ticker] = closes
 
-    def compute_signals(self, universe: list[str], as_of: date) -> list[Signal]:
+    def compute_signals(self, universe: list[str], as_of: date, context: SignalContext | None = None) -> list[Signal]:
         signals = []
         for ticker in universe:
             closes = self._price_cache.get(ticker, [])
