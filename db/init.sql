@@ -222,6 +222,123 @@ CREATE TABLE universe_members (
 );
 CREATE INDEX idx_universe_members ON universe_members (universe_id, removed_at);
 
+-- Economic calendar
+CREATE TABLE economic_calendar (
+    id SERIAL PRIMARY KEY,
+    event_date DATE NOT NULL,
+    event_time TIME,
+    country VARCHAR(10) DEFAULT 'US',
+    event VARCHAR(500) NOT NULL,
+    impact VARCHAR(20) DEFAULT 'medium',
+    actual VARCHAR(50),
+    forecast VARCHAR(50),
+    previous VARCHAR(50),
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX idx_econ_cal_date ON economic_calendar (event_date, impact);
+
+-- Dark pool volume (FINRA ATS weekly data)
+CREATE TABLE dark_pool_volume (
+    id SERIAL PRIMARY KEY,
+    ticker VARCHAR(20) NOT NULL,
+    report_date DATE NOT NULL,
+    ats_name VARCHAR(200),
+    share_volume BIGINT NOT NULL DEFAULT 0,
+    trade_count INTEGER NOT NULL DEFAULT 0,
+    avg_daily_volume BIGINT,
+    volume_pct_of_adv DOUBLE PRECISION,
+    z_score DOUBLE PRECISION,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE (ticker, report_date, ats_name)
+);
+CREATE INDEX idx_dark_pool_ticker ON dark_pool_volume (ticker, report_date DESC);
+CREATE INDEX idx_dark_pool_zscore ON dark_pool_volume (z_score DESC) WHERE z_score > 2.0;
+
+-- Congressional trades (STOCK Act disclosures)
+CREATE TABLE congressional_trades (
+    id SERIAL PRIMARY KEY,
+    ticker VARCHAR(20) NOT NULL,
+    congress_member VARCHAR(200) NOT NULL,
+    chamber VARCHAR(10) NOT NULL CHECK (chamber IN ('house', 'senate')),
+    direction VARCHAR(10) NOT NULL CHECK (direction IN ('buy', 'sell')),
+    amount_min DOUBLE PRECISION,
+    amount_max DOUBLE PRECISION,
+    trade_date DATE NOT NULL,
+    disclosure_date DATE NOT NULL,
+    committee VARCHAR(200),
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE (ticker, congress_member, trade_date, direction)
+);
+CREATE INDEX idx_congress_ticker ON congressional_trades (ticker, trade_date DESC);
+CREATE INDEX idx_congress_recent ON congressional_trades (trade_date DESC);
+
+-- Short interest
+CREATE TABLE short_interest (
+    id SERIAL PRIMARY KEY,
+    ticker VARCHAR(20) NOT NULL,
+    report_date DATE NOT NULL,
+    short_shares BIGINT,
+    shares_outstanding BIGINT,
+    short_pct_float DOUBLE PRECISION,
+    days_to_cover DOUBLE PRECISION,
+    change_pct DOUBLE PRECISION,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE (ticker, report_date)
+);
+CREATE INDEX idx_short_interest_ticker ON short_interest (ticker, report_date DESC);
+
+-- Notifications
+CREATE TABLE notifications (
+    id SERIAL PRIMARY KEY,
+    type VARCHAR(50) NOT NULL,
+    severity VARCHAR(20) DEFAULT 'info'
+        CHECK (severity IN ('info', 'warning', 'critical')),
+    title VARCHAR(500) NOT NULL,
+    body TEXT,
+    metadata JSONB DEFAULT '{}',
+    ticker VARCHAR(20),
+    read BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX idx_notifications_unread ON notifications (read, created_at DESC);
+CREATE INDEX idx_notifications_ticker ON notifications (ticker, created_at DESC);
+
+-- Deployment config (extends strategy_deployments)
+CREATE TABLE deployment_config (
+    deployment_id INTEGER PRIMARY KEY REFERENCES strategy_deployments(id),
+    trigger_mode VARCHAR(20) DEFAULT 'hybrid',
+    schedule_interval_sec INTEGER DEFAULT 60,
+    universe TEXT[] NOT NULL DEFAULT '{}',
+    capital_allocated DOUBLE PRECISION NOT NULL DEFAULT 0,
+    stop_max_loss_pct DOUBLE PRECISION DEFAULT 0.05,
+    stop_max_drawdown_pct DOUBLE PRECISION DEFAULT 0.10,
+    stop_time_limit_days INTEGER,
+    no_overnight BOOLEAN DEFAULT TRUE,
+    daily_loss_limit_pct DOUBLE PRECISION DEFAULT 0.02,
+    max_concurrent_positions INTEGER DEFAULT 3,
+    parameters_override JSONB DEFAULT '{}',
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Deployment snapshots (hypertable for strategy performance tracking)
+CREATE TABLE deployment_snapshots (
+    time TIMESTAMPTZ NOT NULL,
+    deployment_id INTEGER NOT NULL,
+    nav DOUBLE PRECISION,
+    cash DOUBLE PRECISION,
+    positions_count INTEGER,
+    unrealized_pnl DOUBLE PRECISION,
+    realized_pnl DOUBLE PRECISION,
+    drawdown DOUBLE PRECISION,
+    sharpe DOUBLE PRECISION,
+    total_trades INTEGER,
+    win_rate DOUBLE PRECISION,
+    daily_pnl DOUBLE PRECISION,
+    positions JSONB,
+    PRIMARY KEY (time, deployment_id)
+);
+SELECT create_hypertable('deployment_snapshots', 'time');
+
 -- Kill switch log
 CREATE TABLE kill_switch_log (
     id SERIAL PRIMARY KEY,

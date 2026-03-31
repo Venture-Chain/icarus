@@ -34,20 +34,45 @@ async def get_positions(account_id: str | None = None, request: Request = None):
 
 
 @router.get("/risk")
-async def get_risk_metrics(account_id: str | None = None):
-    """Get current portfolio risk metrics. Filter by account_id if provided."""
+async def get_risk_metrics(account_id: str | None = None, request: Request = None):
+    """Get current portfolio risk metrics from broker positions."""
+    if not request:
+        return {"error": "no request context"}
+
+    registry = request.app.state.account_registry
+    all_positions = []
+
+    if account_id:
+        broker = registry.get(account_id)
+        if broker and broker.connected:
+            all_positions = await broker.get_positions()
+    else:
+        for broker in registry.all():
+            if broker.connected:
+                positions = await broker.get_positions()
+                all_positions.extend(positions)
+
+    total_value = sum(p.market_value for p in all_positions if p.market_value)
+    total_pnl = sum(p.unrealized_pnl for p in all_positions if p.unrealized_pnl)
+    long_exposure = sum(p.market_value for p in all_positions if p.quantity and p.quantity > 0 and p.market_value)
+    short_exposure = sum(abs(p.market_value) for p in all_positions if p.quantity and p.quantity < 0 and p.market_value)
+    largest_pct = 0
+    if total_value > 0:
+        largest_pct = max(
+            (abs(p.market_value) / total_value * 100 for p in all_positions if p.market_value),
+            default=0,
+        )
+
     return {
         "account_id": account_id,
-        "var_95": 0,
-        "cvar_95": 0,
-        "max_drawdown": 0,
-        "current_drawdown": 0,
-        "net_exposure": 0,
-        "gross_exposure": 0,
-        "beta": 0,
-        "sharpe": 0,
-        "portfolio_value": 0,
-        "largest_position_pct": 0,
+        "positions_count": len(all_positions),
+        "portfolio_value": total_value,
+        "unrealized_pnl": total_pnl,
+        "long_exposure": long_exposure,
+        "short_exposure": short_exposure,
+        "net_exposure": long_exposure - short_exposure,
+        "gross_exposure": long_exposure + short_exposure,
+        "largest_position_pct": round(largest_pct, 2),
     }
 
 

@@ -2,15 +2,21 @@ import json
 import logging
 from contextlib import asynccontextmanager
 
+import asyncpg
+import redis.asyncio as aioredis
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
 from config import settings
+from engines.strategy_engine import StrategyEngine
 from routers import accounts, data, portfolio, research, strategy, quantum
 from services.account_registry import AccountRegistry
 from services.broker_base import AccountMode
 
 log = logging.getLogger("icarus.main")
+
+# asyncpg needs a plain postgres:// URL (not postgresql+asyncpg://)
+_PG_URL = settings.database_url.replace("postgresql+asyncpg://", "postgresql://").replace("postgresql://", "postgresql://")
 
 
 def _build_registry() -> AccountRegistry:
@@ -71,6 +77,19 @@ def _build_registry() -> AccountRegistry:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Startup: DB pool
+    app.state.db_pool = await asyncpg.create_pool(_PG_URL, min_size=2, max_size=10)
+    log.info("DB pool created")
+
+    # Startup: Redis
+    app.state.redis = aioredis.from_url(settings.redis_url, decode_responses=True)
+    log.info("Redis connected")
+
+    # Startup: strategy engine
+    engine = StrategyEngine()
+    engine.load_strategies()
+    app.state.strategy_engine = engine
+
     # Startup: build registry and connect all brokers
     registry = _build_registry()
     results = await registry.connect_all()
@@ -78,9 +97,13 @@ async def lifespan(app: FastAPI):
         status = "connected" if ok else "FAILED"
         log.info("Broker %s: %s", account_id, status)
     app.state.account_registry = registry
+
     yield
-    # Shutdown: disconnect all brokers
+
+    # Shutdown
     await registry.disconnect_all()
+    await app.state.redis.close()
+    await app.state.db_pool.close()
 
 
 ws_clients: list[WebSocket] = []

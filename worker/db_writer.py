@@ -32,8 +32,9 @@ class DBWriter:
 
         # Ensure consumer groups exist
         streams = [
-            "market:prices", "market:news", "market:sentiment",
-            "market:filings", "social:reddit", "social:stocktwits",
+            "market:prices", "market:prices:1min", "market:news",
+            "market:sentiment", "market:filings", "market:calendar",
+            "market:smart_money", "social:reddit", "social:stocktwits",
         ]
         for stream in streams:
             try:
@@ -126,6 +127,106 @@ class DBWriter:
                     "desc": payload.get("title", ""),
                     "metadata": json.dumps(payload),
                 })
+
+            elif stream == "market:prices:1min":
+                # 1-min bars go into same market_data table
+                await conn.execute(text("""
+                    INSERT INTO market_data (time, ticker, open, high, low, close, volume, source)
+                    VALUES (:time, :ticker, :open, :high, :low, :close, :volume, :source)
+                    ON CONFLICT (time, ticker) DO UPDATE SET
+                        close = EXCLUDED.close, volume = EXCLUDED.volume
+                """), {
+                    "time": timestamp, "ticker": ticker,
+                    "open": payload.get("open"), "high": payload.get("high"),
+                    "low": payload.get("low"), "close": payload.get("close"),
+                    "volume": payload.get("volume"), "source": "alpaca_1min",
+                })
+
+            elif stream == "market:calendar":
+                event_data = payload
+                event_date = event_data.get("date", "")
+                if event_date:
+                    await conn.execute(text("""
+                        INSERT INTO economic_calendar (event_date, event_time, country, event, impact, actual, forecast, previous)
+                        VALUES (:date, :time, :country, :event, :impact, :actual, :forecast, :previous)
+                        ON CONFLICT DO NOTHING
+                    """), {
+                        "date": event_date,
+                        "time": event_data.get("time") or None,
+                        "country": event_data.get("country", "US"),
+                        "event": event_data.get("event", ""),
+                        "impact": event_data.get("impact", "medium"),
+                        "actual": event_data.get("actual", ""),
+                        "forecast": event_data.get("forecast", ""),
+                        "previous": event_data.get("previous", ""),
+                    })
+
+            elif stream == "market:smart_money":
+                sm_type = data.get("type", "")
+
+                if sm_type == "dark_pool":
+                    await conn.execute(text("""
+                        INSERT INTO dark_pool_volume (ticker, report_date, ats_name, share_volume, trade_count)
+                        VALUES (:ticker, :date, :ats, :volume, :trades)
+                        ON CONFLICT (ticker, report_date, ats_name) DO UPDATE SET
+                            share_volume = EXCLUDED.share_volume, trade_count = EXCLUDED.trade_count
+                    """), {
+                        "ticker": ticker,
+                        "date": payload.get("report_date", str(datetime.utcnow().date())),
+                        "ats": payload.get("ats_name", "unknown"),
+                        "volume": payload.get("share_volume", 0),
+                        "trades": payload.get("trade_count", 0),
+                    })
+
+                elif sm_type == "congressional":
+                    direction = payload.get("direction", "buy")
+                    # Parse amount range from string like "$1,001 - $15,000"
+                    amount_str = payload.get("amount", "")
+                    amount_min = 0
+                    amount_max = 0
+                    if " - " in str(amount_str):
+                        parts = str(amount_str).replace("$", "").replace(",", "").split(" - ")
+                        try:
+                            amount_min = float(parts[0])
+                            amount_max = float(parts[1])
+                        except (ValueError, IndexError):
+                            pass
+
+                    trade_date = payload.get("trade_date", "")
+                    if trade_date:
+                        await conn.execute(text("""
+                            INSERT INTO congressional_trades
+                                (ticker, congress_member, chamber, direction, amount_min, amount_max, trade_date, disclosure_date)
+                            VALUES (:ticker, :member, :chamber, :dir, :min, :max, :trade_date, :disc_date)
+                            ON CONFLICT (ticker, congress_member, trade_date, direction) DO NOTHING
+                        """), {
+                            "ticker": ticker,
+                            "member": payload.get("congress_member", ""),
+                            "chamber": payload.get("chamber", "house"),
+                            "dir": direction,
+                            "min": amount_min,
+                            "max": amount_max,
+                            "trade_date": trade_date,
+                            "disc_date": payload.get("disclosure_date", trade_date),
+                        })
+
+                elif sm_type == "short_interest":
+                    report_date = payload.get("report_date", "")
+                    if report_date:
+                        await conn.execute(text("""
+                            INSERT INTO short_interest (ticker, report_date, short_shares, short_pct_float, days_to_cover)
+                            VALUES (:ticker, :date, :shares, :pct, :dtc)
+                            ON CONFLICT (ticker, report_date) DO UPDATE SET
+                                short_shares = EXCLUDED.short_shares,
+                                short_pct_float = EXCLUDED.short_pct_float,
+                                days_to_cover = EXCLUDED.days_to_cover
+                        """), {
+                            "ticker": ticker,
+                            "date": report_date,
+                            "shares": payload.get("short_shares", 0),
+                            "pct": payload.get("short_pct_float", 0),
+                            "dtc": payload.get("days_to_cover", 0),
+                        })
 
             elif stream in ("social:reddit", "social:stocktwits"):
                 source = "reddit" if "reddit" in stream else "stocktwits"
