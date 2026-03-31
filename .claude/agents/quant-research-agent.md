@@ -7,7 +7,7 @@ description: Quantitative research and strategy development. Uses Opus.
 # Quant Research Agent (Framework)
 
 Base definition for quantitative research.
-Override in icarus-research/ for proprietary methodology.
+Override in research/ for proprietary methodology.
 
 ## Capabilities
 

@@ -6,7 +6,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
 from config import settings
-from routers import accounts, approvals, data, ml, portfolio, research, strategy, quantum
+from routers import accounts, data, portfolio, research, strategy, quantum
 from services.account_registry import AccountRegistry
 from services.broker_base import AccountMode
 
@@ -104,8 +104,6 @@ app.include_router(data.router, prefix="/data", tags=["data"])
 app.include_router(research.router, prefix="/research", tags=["research"])
 app.include_router(strategy.router, prefix="/strategies", tags=["strategies"])
 app.include_router(portfolio.router, prefix="/portfolio", tags=["portfolio"])
-app.include_router(ml.router, prefix="/ml", tags=["ml"])
-app.include_router(approvals.router, prefix="/approvals", tags=["approvals"])
 app.include_router(quantum.router, prefix="/quantum", tags=["quantum"])
 app.include_router(accounts.router, prefix="/accounts", tags=["accounts"])
 
@@ -125,4 +123,52 @@ async def websocket_endpoint(websocket: WebSocket):
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "service": "icarus-api"}
+    import asyncpg
+    import redis.asyncio as aioredis
+
+    result = {
+        "status": "ok",
+        "service": "icarus-api",
+        "timescaledb": "offline",
+        "redis": "offline",
+        "data_feeds": "offline",
+    }
+
+    conn = None
+
+    # Check TimescaleDB
+    try:
+        conn = await asyncpg.connect(
+            "postgresql://icarus:icarus@timescaledb:5432/icarus",
+            timeout=2,
+        )
+        await conn.execute("SELECT 1")
+        result["timescaledb"] = "online"
+    except Exception:
+        pass
+
+    # Check data feeds (recent market_data from worker)
+    if conn:
+        try:
+            row = await conn.fetchval(
+                "SELECT COUNT(*) FROM market_data WHERE time > NOW() - INTERVAL '1 hour'"
+            )
+            if row and row > 0:
+                result["data_feeds"] = "online"
+        except Exception:
+            pass
+        await conn.close()
+
+    # Check Redis
+    try:
+        r = aioredis.from_url(settings.redis_url, decode_responses=True)
+        await r.ping()
+        await r.close()
+        result["redis"] = "online"
+    except Exception:
+        pass
+
+    if result["timescaledb"] == "offline" or result["redis"] == "offline":
+        result["status"] = "degraded"
+
+    return result

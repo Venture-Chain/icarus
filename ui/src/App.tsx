@@ -4,7 +4,7 @@ import AccountCards from './components/AccountCards'
 import PortfolioOverview from './components/PortfolioOverview'
 import StrategyCommand from './components/StrategyCommand'
 import RiskConsole from './components/RiskConsole'
-import ApprovalQueue from './components/ApprovalQueue'
+import KillSwitch from './components/KillSwitch'
 import AlertFeed from './components/AlertFeed'
 import SystemHealth from './components/SystemHealth'
 import QuantumLab from './components/QuantumLab'
@@ -149,8 +149,8 @@ function App() {
             <div className="panel panel-strategies">
               <StrategyCommand apiUrl={API_URL} />
             </div>
-            <div className="panel panel-approvals">
-              <ApprovalQueue apiUrl={API_URL} selectedAccount={selectedAccount} />
+            <div className="panel panel-killswitch">
+              <KillSwitch apiUrl={API_URL} selectedAccount={selectedAccount} />
             </div>
             <div className="panel panel-alerts">
               <AlertFeed alerts={alerts} selectedAccount={selectedAccount} />

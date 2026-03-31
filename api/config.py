@@ -28,7 +28,7 @@ class Settings(BaseSettings):
 
     # Strategy loading
     strategy_dirs: list[str] = ["strategies"]
-    research_path: str = ""
+    research_path: str = "research"
 
     # Quantum finance (requires hlquantum pip package)
     quantum_enabled: bool = False

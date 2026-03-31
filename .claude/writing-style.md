@@ -1,105 +1,27 @@
-# NeoJelly — Agent Writing Style
+# Icarus — Agent Writing Style
 
-> How to write PR titles, descriptions, commit messages, and code
-> comments. The goal is output that reads like a senior engineer
-> wrote it, not an AI assistant.
+> How to write commit messages, code comments, and documentation.
+> The goal is output that reads like a senior engineer wrote it,
+> not an AI assistant.
 
 ## The Core Rule
 
 **Scale effort to change size.** A one-line fix gets a one-line
-PR body. A multi-day feature gets bullets. Never produce the same
-structured format regardless of what changed.
-
-The most structured writer on the team sets the ceiling. Going
-further than that trips every detector.
-
----
-
-## PR Titles
-
-### Rules
-- 5-12 words. No period at the end
-- Lowercase after the type prefix: `feat:`, `fix:`, `chore:`
-- Drop articles: "add filter" not "add a filter"
-- Abbreviations are natural: `deps`, `env`, `config`, `auth`, `db`
-- Conventional commit prefix is optional for small changes
-
-### Good
-```
-feat: add coupon validation endpoint
-fix: stripe webhook not processing refunds
-chore: bump neojelly sdk to 1.0.18
-add redirect click tracking
-fix: creator slug check returns wrong status
-```
-
-### Never write
-```
-feat: Implement Comprehensive Coupon Validation System with Stripe Integration
-chore: Enhance the existing webhook handler for improved reliability
-fix: Resolve the issue causing stripe webhooks to not process refunds correctly
-```
-
----
-
-## PR Descriptions
-
-### The effort spectrum
-
-```
-null body --- ticket/link --- 1 sentence --- bullets --- structured
-   25%            15%             25%           25%          10%
-```
-
-Never land at "structured" for a small change. Match the size.
-
-### Small fix (1-3 files changed)
-```
-webhook was returning 200 before verifying signature
-```
-One sentence. Done.
-
-### Medium change (new endpoint, refactor)
-```
-- adds POST /coupons/validate endpoint
-- checks against stripe before saving to db
-- returns 400 if expired or already used
-```
-Bullets. No headers. No preamble.
-
-### Large feature
-```
-adds stripe coupon flow end to end
-
-- new endpoint: POST /coupons/validate
-- sdk method: api.Coupons.validate(token, code)
-- ui: coupon input on checkout with inline error state
-- webhook handles coupon.deleted to sync db
-
-tested against stripe test mode, 3 coupon states covered
-```
-Still no bold headers. Still no "This PR introduces...".
-
-### Never write
-- "This PR introduces..." or "This change implements..."
-- Bold category headers: `**Database Changes:**`
-- Sections nobody asked for: `## Rollback Plan`, `## Accessibility`
-- "Comprehensive test coverage" — write actual numbers: "14 tests"
-- "The most important changes are grouped below"
-- A perfectly filled template every single time
+commit message. A multi-file feature gets bullets. Never produce
+the same structured format regardless of what changed.
 
 ---
 
 ## Commit Messages
 
-### Individual commits (feature branch work)
+### Individual commits
 ```
-add coupon validate endpoint
-fix auth check on webhook
-update sdk method signature
-remove unused import
-wip: testing stripe coupon states
-fix response format
+add backtest walk-forward validation
+fix signal confidence clamping
+update risk limits config
+remove unused data requirement
+wip: testing IB order routing
+fix regime detection window
 ```
 
 ### Rules
@@ -113,10 +35,10 @@ fix response format
 
 ### Never write
 ```
-Implement coupon validation to improve checkout UX and ensure
-robust handling of expired and already-used codes. This commit
-adds the POST /coupons/validate endpoint and updates the SDK
-to expose this functionality to frontend consumers.
+Implement walk-forward backtesting validation to ensure robust
+out-of-sample testing and improve strategy evaluation reliability.
+This commit adds validation checks and updates the backtest engine
+to expose this functionality to the research pipeline.
 ```
 
 ---
@@ -130,41 +52,35 @@ Comments explain **why**, never **what**. If the code reads
 clearly, no comment is needed.
 
 ### Acceptable
-```csharp
-// Stripe requires raw body for webhook signature verification
-// must read before model binding touches the stream
-Request.EnableBuffering();
+```python
+# IB API returns prices as floats with variable precision
+# round to 2 decimals to match our position tracking
+price = round(raw_price, 2)
 ```
 
-```js
-// FormData not JSON — matches [FromForm] on the backend
-const formData = new FormData();
+```python
+# walk-forward: train on history, test on unseen window
+# prevents lookahead bias in backtest results
+for train_end in walk_forward_dates:
 ```
 
-```jsx
-// step stored as string so we can add more steps without
-// renumbering enum values
-const [step, setStep] = useState('info');
+```python
+# kill switch stays latched until CIO explicitly clears it
+# auto-deactivation would defeat the purpose
+if self.kill_switch_active:
+    return SignalRejection("kill switch active")
 ```
 
 ### Instant AI flag
-```csharp
-// Get the creator from the database
-var creator = await context.Creators.FirstOrDefaultAsync(...);
+```python
+# Get the strategy from the engine
+strategy = engine.get_strategy(name)
 
-// Check if stripe ID exists
-if (string.IsNullOrEmpty(stripeId))
+# Check if the strategy exists
+if strategy is None:
 
-// Return the products
-return stripeProducts;
-```
-
-```js
-// Create a new FormData object
-const formData = new FormData();
-
-// Append the account stripe ID
-formData.append('accountStripeId', accountStripeId);
+# Return the signals
+return signals
 ```
 
 If you're about to write a comment that describes what the next
@@ -174,11 +90,11 @@ line does, delete the comment.
 
 ## Forbidden Words
 
-Never use these — they are reliable AI tells:
+Never use these, they are reliable AI tells:
 
 | Avoid | Use instead |
 |---|---|
-| "comprehensive" | actual scope: "covers 3 coupon states" |
+| "comprehensive" | actual scope: "covers 3 signal types" |
 | "robust" | just skip it |
 | "ensures" / "ensuring" | "so that" or restructure |
 | "leverages" / "leverage" | "uses" |
@@ -192,25 +108,14 @@ Never use these — they are reliable AI tells:
 | "facilitates" | "lets" or "allows" |
 | Em dashes | commas, colons, parens, or restructure |
 
-Never start a PR body or commit with:
-- "This pull request..."
-- "This change..."
-- "This commit..."
-- "The main changes..."
-- "Key changes include:"
-
 ---
 
 ## Checklist Before Submitting
 
-- [ ] PR description length matches the size of the change
 - [ ] No em dashes anywhere
 - [ ] No forbidden words (comprehensive, robust, ensures, leverages)
-- [ ] No "This PR introduces..." or "This change implements..."
-- [ ] No bold section headers in PR body
 - [ ] Code comments explain why, not what
 - [ ] No comments on code that reads obviously
-- [ ] No co-authored-by lines in commits
 - [ ] Commit messages are short and lowercase
 
 ---
@@ -218,12 +123,12 @@ Never start a PR body or commit with:
 ## The Contrast Test
 
 **Wrong:**
-> This PR introduces a comprehensive refactoring of the coupon
-> system, enhancing reliability and ensuring robust validation
-> against the Stripe API. Additionally, this change implements
-> proper error handling for expired codes.
+> This commit introduces a comprehensive refactoring of the risk
+> engine, enhancing reliability and ensuring robust validation
+> of position limits. Additionally, this change implements
+> proper kill switch handling for edge cases.
 
 **Right:**
-> - validate coupons against stripe before saving
-> - 400 on expired or already-used codes
-> - webhook syncs deletions to db
+> - validate position limits before signal approval
+> - kill switch rejects all signals when latched
+> - warn at 80% of each limit threshold

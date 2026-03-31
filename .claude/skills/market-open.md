@@ -1,6 +1,6 @@
 ---
 name: market-open
-description: Pre-market brief template. Override in icarus-research for custom methodology.
+description: Pre-market brief template. Override in research/ for custom methodology.
 ---
 
 # /market-open

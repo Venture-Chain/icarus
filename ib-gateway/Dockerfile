@@ -7,13 +7,14 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     wget unzip xvfb libxtst6 libxrender1 libxi6 \
     x11vnc novnc websockify && \
+    ln -sf /usr/share/novnc/vnc.html /usr/share/novnc/index.html && \
     rm -rf /var/lib/apt/lists/*
 
-# Install Azul Zulu JRE 17.0.10 (exact version required by IB Gateway's install4j launcher)
+# Install Azul Zulu JRE+FX 17.0.10 (JavaFX required by IB Gateway 10.37+)
 RUN mkdir -p /opt/i4j_jres/Oda-jK0QgTEmVssfllLP && \
-    wget -q https://cdn.azul.com/zulu/bin/zulu17.48.15-ca-jre17.0.10-linux_x64.tar.gz -O /tmp/zulu-jre.tar.gz && \
+    wget -q https://cdn.azul.com/zulu/bin/zulu17.48.15-ca-fx-jre17.0.10-linux_x64.tar.gz -O /tmp/zulu-jre.tar.gz && \
     tar xzf /tmp/zulu-jre.tar.gz -C /opt/i4j_jres/Oda-jK0QgTEmVssfllLP && \
-    mv /opt/i4j_jres/Oda-jK0QgTEmVssfllLP/zulu17.48.15-ca-jre17.0.10-linux_x64 /opt/i4j_jres/Oda-jK0QgTEmVssfllLP/17.0.10.0.101-zulu && \
+    mv /opt/i4j_jres/Oda-jK0QgTEmVssfllLP/zulu17.48.15-ca-fx-jre17.0.10-linux_x64 /opt/i4j_jres/Oda-jK0QgTEmVssfllLP/17.0.10.0.101-zulu && \
     rm /tmp/zulu-jre.tar.gz
 
 ENV INSTALL4J_JAVA_HOME=/opt/i4j_jres/Oda-jK0QgTEmVssfllLP/17.0.10.0.101-zulu

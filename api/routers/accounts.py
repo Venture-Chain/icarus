@@ -71,33 +71,3 @@ async def reconnect_account(account_id: str, request: Request):
     return {"account_id": account_id, "connected": success}
 
 
-@router.post("/{account_id}/kill-switch")
-async def kill_switch_account(account_id: str, request: Request):
-    """Flatten all positions for a specific broker account."""
-    registry = request.app.state.account_registry
-    broker = registry.get(account_id)
-    if not broker:
-        return {"error": f"account {account_id} not found"}
-    if not broker.connected:
-        return {"error": f"account {account_id} not connected"}
-
-    positions = await broker.get_positions()
-    results = []
-    for pos in positions:
-        if pos.quantity == 0:
-            continue
-        action = "SELL" if pos.quantity > 0 else "BUY"
-        order = await broker.place_order(
-            ticker=pos.ticker,
-            action=action,
-            quantity=abs(pos.quantity),
-            order_type="MKT",
-        )
-        results.append({
-            "ticker": pos.ticker,
-            "action": action,
-            "quantity": abs(pos.quantity),
-            "order_id": order.broker_order_id,
-            "status": order.status,
-        })
-    return {"account_id": account_id, "flattened": results}

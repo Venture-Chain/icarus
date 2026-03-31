@@ -201,52 +201,6 @@ CREATE TABLE backtest_runs (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Risk snapshots (hypertable)
-CREATE TABLE risk_snapshots (
-    time TIMESTAMPTZ NOT NULL,
-    account_id VARCHAR(50),
-    portfolio_value DOUBLE PRECISION,
-    var_95 DOUBLE PRECISION,
-    cvar_95 DOUBLE PRECISION,
-    max_drawdown DOUBLE PRECISION,
-    current_drawdown DOUBLE PRECISION,
-    net_exposure DOUBLE PRECISION,
-    gross_exposure DOUBLE PRECISION,
-    beta DOUBLE PRECISION,
-    sharpe DOUBLE PRECISION,
-    positions_count INTEGER,
-    metadata JSONB,
-    PRIMARY KEY (time)
-);
-SELECT create_hypertable('risk_snapshots', 'time');
-
--- Approvals (CIO gate)
-CREATE TABLE approvals (
-    id SERIAL PRIMARY KEY,
-    action_type VARCHAR(50) NOT NULL,
-    description TEXT NOT NULL,
-    reasoning TEXT,
-    payload JSONB,
-    status VARCHAR(20) DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
-    decided_by VARCHAR(100),
-    decided_at TIMESTAMPTZ,
-    created_at TIMESTAMPTZ DEFAULT NOW()
-);
-CREATE INDEX idx_approvals_status ON approvals (status, created_at DESC);
-
--- Factor values (hypertable)
-CREATE TABLE factor_values (
-    time TIMESTAMPTZ NOT NULL,
-    ticker VARCHAR(20) NOT NULL,
-    factor_name VARCHAR(100) NOT NULL,
-    value DOUBLE PRECISION,
-    z_score DOUBLE PRECISION,
-    quintile INTEGER,
-    PRIMARY KEY (time, ticker, factor_name)
-);
-SELECT create_hypertable('factor_values', 'time');
-CREATE INDEX idx_factor_ticker ON factor_values (ticker, factor_name, time DESC);
-
 -- Universes
 CREATE TABLE universes (
     id SERIAL PRIMARY KEY,
@@ -267,20 +221,6 @@ CREATE TABLE universe_members (
     UNIQUE(universe_id, ticker, added_at)
 );
 CREATE INDEX idx_universe_members ON universe_members (universe_id, removed_at);
-
--- Cost models
-CREATE TABLE cost_models (
-    id SERIAL PRIMARY KEY,
-    ticker VARCHAR(20),
-    commission_per_share DOUBLE PRECISION DEFAULT 0.005,
-    min_commission DOUBLE PRECISION DEFAULT 1.0,
-    avg_spread_bps DOUBLE PRECISION DEFAULT 5.0,
-    avg_daily_volume BIGINT,
-    slippage_model VARCHAR(50) DEFAULT 'linear',
-    short_borrow_rate DOUBLE PRECISION DEFAULT 0.0,
-    updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-CREATE INDEX idx_cost_models_ticker ON cost_models (ticker);
 
 -- Kill switch log
 CREATE TABLE kill_switch_log (

@@ -43,14 +43,23 @@ export default function SystemHealth({ apiUrl }: Props) {
         const resp = await fetch(`${apiUrl}/health`)
         const latency = Date.now() - start
         if (resp.ok) {
-          setCore(prev => prev.map(s =>
-            s.name === 'API' ? { ...s, status: 'active' as const, latency } : s
-          ))
-          setEngines(prev => prev.map(s =>
-            s.name === 'Strategy Engine' || s.name === 'Risk Engine'
-              ? { ...s, status: 'active' as const, latency }
-              : s
-          ))
+          const data = await resp.json()
+          const dbStatus = data.timescaledb === 'online' ? 'active' as const : 'error' as const
+          const redisStatus = data.redis === 'online' ? 'active' as const : 'error' as const
+          setCore(prev => prev.map(s => {
+            if (s.name === 'API') return { ...s, status: 'active' as const, latency }
+            if (s.name === 'TimescaleDB') return { ...s, status: dbStatus, latency }
+            if (s.name === 'Redis') return { ...s, status: redisStatus, latency }
+            return s
+          }))
+          const feedStatus = data.data_feeds === 'online' ? 'active' as const : 'error' as const
+          setEngines(prev => prev.map(s => {
+            if (s.name === 'Strategy Engine' || s.name === 'Risk Engine')
+              return { ...s, status: 'active' as const, latency }
+            if (s.name === 'Data Feeds')
+              return { ...s, status: feedStatus, latency }
+            return s
+          }))
         }
       } catch {
         setCore(prev => prev.map(s => ({ ...s, status: 'inactive' as const, latency: undefined })))

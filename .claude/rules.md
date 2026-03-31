@@ -4,7 +4,7 @@
 
 This is the Icarus open-source framework. When working in this repo,
 you are building infrastructure, not doing research. The research
-identity lives in icarus-research/.
+identity lives in research/.
 
 Code here must be generic, reusable, and free of proprietary logic.
 
@@ -16,7 +16,6 @@ Code here must be generic, reusable, and free of proprietary logic.
 - Read files, explore codebase
 - Write, edit, delete code
 - Run tests, lints, builds
-- Create feature branches
 - Update .claude/ files
 - Run docker compose up/down
 - Run database migrations

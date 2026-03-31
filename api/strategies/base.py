@@ -1,6 +1,6 @@
 """
 Base strategy interface. All strategies implement this.
-Public framework: strategies in icarus-research extend this.
+Public framework: strategies in research/ extend this.
 """
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field

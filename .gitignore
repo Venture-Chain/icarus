@@ -3,6 +3,9 @@
 *.env
 docker-compose.override.yml
 
+# Private research (clone icarus-research repo here)
+research/
+
 # Python
 __pycache__/
 *.pyc
