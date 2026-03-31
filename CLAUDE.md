@@ -30,7 +30,8 @@ docker compose up
 | redis | 5103 | Cache + streams |
 | ib-gateway | 5104 | IB API |
 | ib-gateway | 5105 | noVNC web UI (login + 2FA) |
-| icarus-worker | (bg) | Data ingestion |
+| icarus-worker | (bg) | Data ingestion + FinBERT sentiment |
+| icarus-runner | (bg) | Strategy runner + deployment engine |
 
 ## Project Structure
 
@@ -40,10 +41,11 @@ icarus/
     main.py                     # FastAPI app setup, routers, WebSocket
     config.py                   # Settings from environment
     routers/
-      strategy.py               # Strategy registration, deployment
+      strategy.py               # Strategy registration, deployment, deploy flow
       portfolio.py              # Positions, risk metrics, kill-switch
       data.py                   # Price, news, sentiment, filings, fundamentals, smart money
-      research.py               # Backtest, research logging
+      research.py               # Backtest, Monte Carlo projections, scenario analysis
+      notifications.py          # Notification CRUD (list, unread count, mark read)
     engines/
       strategy_engine.py        # Strategy plugin loader and signal generation
       risk_engine.py            # VaR, CVaR, limits, kill-switch
@@ -53,6 +55,7 @@ icarus/
       cost_model.py             # Commission, slippage, tiered pricing
       sensitivity_engine.py     # Stress testing, scenario analysis
       quantum_engine.py         # Quantum finance (HLQuantum integration)
+      confluence_engine.py      # Smart money confluence scoring (0-100 conviction)
     services/
       ib_client.py              # IB Gateway client (threading bridge)
       alpaca.py                 # Alpaca Markets batch API
@@ -65,14 +68,20 @@ icarus/
       cache.py                  # Redis caching layer
       rate_limiter.py           # API call budgeting
       streams.py                # Redis Streams publisher
+      notifier.py               # Notification service (DB + Redis pub/sub)
     strategies/
-      base.py                   # BaseStrategy + Signal + DataRequirement
+      base.py                   # BaseStrategy + Signal + SignalContext + DataRequirement
       example_momentum.py       # MA crossover (educational)
       example_mean_reversion.py # Mean reversion (educational)
     models/
   worker/
-    main.py                     # Async data pulls from all sources (rate-aware scheduling)
-    db_writer.py                # Writes to PostgreSQL
+    main.py                     # Data ingestion: 1-min bars, news, FinBERT, smart money, calendar
+    db_writer.py                # Redis Streams consumer, writes to TimescaleDB
+  runner/
+    main.py                     # Strategy runner: deployments, flatten loop, snapshots
+    virtual_portfolio.py        # Paper trading simulation
+    news_monitor.py             # 24/7 news stream consumer, generates notifications
+    smart_money_monitor.py      # Dark pool/congress/insider alert generator
   ui/
     src/
       App.tsx                   # Main layout (6-panel grid)
@@ -93,18 +102,35 @@ icarus/
 
 ### Strategy Plugin System
 All strategies extend `BaseStrategy` from `api/strategies/base.py`.
-Strategies define `data_requirements` and implement `compute_signals(universe, as_of) -> list[Signal]`.
-Signals carry direction (long/short/close/hedge), confidence, and metadata.
-The execution engine converts signals to orders after risk engine approval.
+Strategies define `required_data()` and implement `compute_signals(universe, as_of, context) -> list[Signal]`.
+`SignalContext` carries trigger type, capital, market state, and confluence scores.
+The runner manages deployments: scheduled execution, daily loss limits, end-of-day flatten.
+
+### Three-Layer Trading Algorithm
+1. Pattern Scanner (rule-based): breakouts, momentum, volume spikes
+2. ML Confidence Filter (XGBoost): scores setup probability, threshold > 0.6
+3. Context Check (data queries + rules): FinBERT news, sentiment, calendar, smart money
+
+Strategy lives in `research/strategies/swing_pattern.py` (gitignored).
 
 ### Risk Management
 Default limits: max position 5%, daily loss 2%, drawdown 10%, max 3 concurrent positions.
 No overnight positions (hard flatten at 3:55 PM EST). Kill switch for emergency flatten.
 
+### Smart Money Data
+Dark pool volume (FINRA ATS weekly, Z-score), congressional trades (daily),
+insider purchases (Form 4), short interest (daily). Confluence scoring 0-100.
+
 ### Data Ingestion (Worker)
-Rate-aware scheduling with per-source budgets:
-Alpaca (5min), yfinance (30min), Finnhub (15min), Alpha Vantage (60min, 2 tickers/day rotating),
-StockTwits (20min), SEC EDGAR (60min). All published to Redis Streams.
+1-min bars for universe tickers (RKLB, LUNR, ASTS, IONQ, RGTI), 5-min for broad watchlist.
+FinBERT (ProsusAI/finbert) scores every headline inline on GPU.
+News polling every 5 min (24/7). Economic calendar daily. Smart money sources on schedule.
+All published to Redis Streams, consumed by db_writer, news_monitor, and smart_money_monitor.
+
+### Notifications
+Notifier service writes to DB + Redis pub/sub. WebSocket forwards to Control Room.
+Types: news_alert, portfolio_alert, stop_triggered, risk_warning, smart_money, system.
+Severities: info, warning, critical.
 
 ### Control Room UI
 6-panel CSS Grid layout with dark terminal aesthetic. Real-time WebSocket connection to API.
