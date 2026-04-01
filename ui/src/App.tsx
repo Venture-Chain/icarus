@@ -44,6 +44,44 @@ function isMarketOpen(date: Date): boolean {
 
 type View = 'control-room' | 'quantum-lab'
 
+export interface AccountDetail {
+  account_id: string
+  broker_type: string
+  mode: string
+  connected: boolean
+  net_liquidation: number
+  unrealized_pnl: number
+}
+
+async function fetchAccountDetails(apiUrl: string): Promise<AccountDetail[]> {
+  const listResp = await fetch(`${apiUrl}/accounts/`)
+  const list = await listResp.json()
+  if (!Array.isArray(list) || list.length === 0) return []
+
+  return Promise.all(
+    list.map(async (a: any) => {
+      try {
+        const resp = await fetch(`${apiUrl}/accounts/${a.account_id}`)
+        const detail = await resp.json()
+        return {
+          account_id: a.account_id,
+          broker_type: a.broker_type,
+          mode: a.mode,
+          connected: detail.connected ?? a.connected,
+          net_liquidation: detail.net_liquidation ?? 0,
+          unrealized_pnl: detail.unrealized_pnl ?? 0,
+        } as AccountDetail
+      } catch {
+        return {
+          ...a,
+          net_liquidation: 0,
+          unrealized_pnl: 0,
+        } as AccountDetail
+      }
+    })
+  )
+}
+
 function App() {
   const [alerts, setAlerts] = useState<Alert[]>([])
   const [connected, setConnected] = useState(false)
@@ -52,39 +90,45 @@ function App() {
   const [selectedAccount, setSelectedAccount] = useState('')
   const [loadingStatus, setLoadingStatus] = useState<LoadingStatus>('connecting')
   const [visible, setVisible] = useState(false)
+  const [initialAccounts, setInitialAccounts] = useState<AccountDetail[] | null>(null)
   const wsRef = useRef<WebSocket | null>(null)
   const now = useCurrentTime()
 
+  const bootSequence = async (signal?: { cancelled: boolean }) => {
+    const minDisplayTime = new Promise(resolve => setTimeout(resolve, 1500))
+
+    try {
+      const healthResp = await fetch(`${API_URL}/health`)
+      if (!healthResp.ok) throw new Error('health check failed')
+      if (signal?.cancelled) return
+
+      setLoadingStatus('loading-accounts')
+
+      const [accounts] = await Promise.all([
+        fetchAccountDetails(API_URL),
+        minDisplayTime,
+      ])
+      if (signal?.cancelled) return
+
+      setInitialAccounts(accounts)
+      setLoadingStatus('ready')
+    } catch {
+      if (!signal?.cancelled) setLoadingStatus('offline')
+    }
+  }
+
   useEffect(() => {
-    let cancelled = false
+    const signal = { cancelled: false }
     const timeout = setTimeout(() => {
-      if (!cancelled && loadingStatus === 'connecting') {
+      if (!signal.cancelled && loadingStatus === 'connecting') {
         setLoadingStatus('offline')
       }
-    }, 5000)
+    }, 8000)
 
-    fetch(`${API_URL}/health`)
-      .then(r => {
-        if (!r.ok) throw new Error('health check failed')
-        return r.json()
-      })
-      .then(() => {
-        if (cancelled) return
-        clearTimeout(timeout)
-        setLoadingStatus('loading-accounts')
-        setTimeout(() => {
-          if (!cancelled) setLoadingStatus('ready')
-        }, 600)
-      })
-      .catch(() => {
-        if (!cancelled) {
-          clearTimeout(timeout)
-          setLoadingStatus('offline')
-        }
-      })
+    bootSequence(signal)
 
     return () => {
-      cancelled = true
+      signal.cancelled = true
       clearTimeout(timeout)
     }
   }, [])
@@ -132,16 +176,7 @@ function App() {
 
   const handleRetry = () => {
     setLoadingStatus('connecting')
-    fetch(`${API_URL}/health`)
-      .then(r => {
-        if (!r.ok) throw new Error('health check failed')
-        return r.json()
-      })
-      .then(() => {
-        setLoadingStatus('loading-accounts')
-        setTimeout(() => setLoadingStatus('ready'), 600)
-      })
-      .catch(() => setLoadingStatus('offline'))
+    bootSequence()
   }
 
   const statusLabel: Record<LoadingStatus, string> = {
@@ -225,6 +260,7 @@ function App() {
             apiUrl={API_URL}
             selectedAccount={selectedAccount}
             onSelectAccount={setSelectedAccount}
+            initialAccounts={initialAccounts}
           />
           <div className="grid">
             <div className="panel panel-risk">

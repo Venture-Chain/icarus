@@ -1,25 +1,11 @@
 import { useState, useEffect } from 'react'
-
-interface BrokerAccount {
-  account_id: string
-  broker_type: string
-  mode: string
-  connected: boolean
-}
-
-interface AccountDetail {
-  account_id: string
-  broker_type: string
-  mode: string
-  connected: boolean
-  net_liquidation: number
-  unrealized_pnl: number
-}
+import type { AccountDetail } from '../App'
 
 interface Props {
   apiUrl: string
   selectedAccount: string
   onSelectAccount: (accountId: string) => void
+  initialAccounts?: AccountDetail[] | null
 }
 
 function fmtUsd(n: number): string {
@@ -30,14 +16,18 @@ function fmtUsd(n: number): string {
   return `${sign}$${abs.toFixed(2)}`
 }
 
-export default function AccountCards({ apiUrl, selectedAccount, onSelectAccount }: Props) {
-  const [accounts, setAccounts] = useState<AccountDetail[]>([])
+export default function AccountCards({ apiUrl, selectedAccount, onSelectAccount, initialAccounts }: Props) {
+  const [accounts, setAccounts] = useState<AccountDetail[]>(initialAccounts ?? [])
+
+  useEffect(() => {
+    if (initialAccounts) setAccounts(initialAccounts)
+  }, [initialAccounts])
 
   useEffect(() => {
     const fetchAccounts = async () => {
       try {
         const listResp = await fetch(`${apiUrl}/accounts/`)
-        const list: BrokerAccount[] = await listResp.json()
+        const list: any[] = await listResp.json()
         if (!Array.isArray(list) || list.length === 0) {
           setAccounts([])
           return
@@ -71,7 +61,7 @@ export default function AccountCards({ apiUrl, selectedAccount, onSelectAccount 
       }
     }
 
-    fetchAccounts()
+    // Poll for updates (initial load handled by App.tsx boot sequence)
     const id = setInterval(fetchAccounts, 15000)
     return () => clearInterval(id)
   }, [apiUrl])
