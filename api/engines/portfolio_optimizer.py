@@ -1,11 +1,14 @@
 """
 Portfolio optimization engine.
 Mean-variance, risk parity, Black-Litterman, with constraints.
+Signal-level constraint enforcement for sector rotation deployments.
 """
 import logging
 from dataclasses import dataclass, field
 
 import numpy as np
+
+from strategies.base import Signal
 
 log = logging.getLogger("icarus.optimizer")
 
@@ -300,6 +303,77 @@ class PortfolioOptimizer:
             net_exposure=long_sum - short_sum,
             method=method,
         )
+
+    def optimize(
+        self,
+        signals: list[Signal],
+        capital: float,
+        current_positions: dict[str, float] | None = None,
+    ) -> list[Signal]:
+        """
+        Apply position and sector constraints to a set of signals before execution.
+
+        Returns signals with updated metadata containing adjusted quantity and position_size_pct.
+        close/hedge direction signals pass through unchanged.
+        """
+        current_positions = current_positions or {}
+
+        MAX_POSITION_PCT = 0.05
+        MAX_SECTOR_PCT = 0.35
+        MAX_POSITIONS = 15
+
+        long_signals = [s for s in signals if s.direction == "long"]
+        passthrough = [s for s in signals if s.direction != "long"]
+
+        # Keep top MAX_POSITIONS by confidence
+        long_signals.sort(key=lambda s: s.confidence, reverse=True)
+        long_signals = long_signals[:MAX_POSITIONS]
+
+        # First pass: assign base allocation (confidence-weighted, capped at 5%)
+        total_confidence = sum(s.confidence for s in long_signals) or 1.0
+        allocations: dict[str, float] = {}
+        for s in long_signals:
+            raw_pct = (s.confidence / total_confidence)
+            allocations[s.ticker] = min(raw_pct, MAX_POSITION_PCT)
+
+        # Sector enforcement: cap each sector at 35%
+        sector_totals: dict[str, float] = {}
+        for s in long_signals:
+            sector = s.metadata.get("sector", "unknown")
+            sector_totals[sector] = sector_totals.get(sector, 0.0) + allocations[s.ticker]
+
+        for sector, total in sector_totals.items():
+            if total > MAX_SECTOR_PCT:
+                scale = MAX_SECTOR_PCT / total
+                for s in long_signals:
+                    if s.metadata.get("sector") == sector:
+                        allocations[s.ticker] *= scale
+
+        # Renormalize so allocations sum to <= 1.0
+        total_alloc = sum(allocations.values())
+        if total_alloc > 1.0:
+            scale = 1.0 / total_alloc
+            allocations = {t: v * scale for t, v in allocations.items()}
+
+        result: list[Signal] = []
+        for s in long_signals:
+            pct = allocations[s.ticker]
+            position_value = capital * pct
+            entry_price = s.metadata.get("entry_price", 0.0)
+            quantity = int(position_value / entry_price) if entry_price > 0 else 0
+
+            updated_meta = {**s.metadata, "position_size_pct": round(pct, 4), "quantity": quantity}
+            result.append(Signal(
+                ticker=s.ticker,
+                direction=s.direction,
+                instrument=s.instrument,
+                confidence=s.confidence,
+                hedge_for=s.hedge_for,
+                sizing_method=s.sizing_method,
+                metadata=updated_meta,
+            ))
+
+        return result + passthrough
 
     def calculate_turnover(
         self,

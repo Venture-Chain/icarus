@@ -351,3 +351,26 @@ CREATE TABLE kill_switch_log (
     deactivated_at TIMESTAMPTZ,
     deactivated_by VARCHAR(100)
 );
+
+-- Debate results (agent-assisted analysis)
+CREATE TABLE debate_results (
+    id SERIAL PRIMARY KEY,
+    ticker VARCHAR(20) NOT NULL,
+    bull_thesis TEXT,
+    bull_catalysts TEXT[],
+    bull_conviction INTEGER,
+    bear_thesis TEXT,
+    bear_risks TEXT[],
+    bear_conviction INTEGER,
+    judge_direction VARCHAR(10) CHECK (judge_direction IN ('long', 'short', 'skip')),
+    judge_conviction INTEGER,
+    price_targets JSONB,
+    entry_price DOUBLE PRECISION,
+    stop_price DOUBLE PRECISION,
+    sector VARCHAR(50),
+    metadata JSONB DEFAULT '{}',
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    expires_at TIMESTAMPTZ DEFAULT NOW() + INTERVAL '24 hours'
+);
+CREATE INDEX idx_debate_ticker ON debate_results (ticker, created_at DESC);
+CREATE INDEX idx_debate_active ON debate_results (expires_at) WHERE expires_at > NOW();

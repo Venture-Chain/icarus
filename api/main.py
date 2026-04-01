@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from config import settings
 from engines.strategy_engine import StrategyEngine
-from routers import accounts, data, notifications, portfolio, research, strategy, quantum
+from routers import accounts, data, debate, notifications, portfolio, research, strategy, quantum
 from services.account_registry import AccountRegistry
 from services.broker_base import AccountMode
 
@@ -95,6 +95,10 @@ async def lifespan(app: FastAPI):
     engine.load_strategies()
     app.state.strategy_engine = engine
 
+    # Startup: debate engine
+    from engines.debate_engine import DebateEngine
+    app.state.debate_engine = DebateEngine(app.state.redis, app.state.db_pool)
+
     # Startup: build registry and connect all brokers
     registry = _build_registry()
     results = await registry.connect_all()
@@ -135,6 +139,7 @@ app.include_router(portfolio.router, prefix="/portfolio", tags=["portfolio"])
 app.include_router(quantum.router, prefix="/quantum", tags=["quantum"])
 app.include_router(accounts.router, prefix="/accounts", tags=["accounts"])
 app.include_router(notifications.router, prefix="/notifications", tags=["notifications"])
+app.include_router(debate.router, prefix="/debate", tags=["debate"])
 
 
 @app.websocket("/ws")
@@ -195,14 +200,17 @@ async def health():
     except Exception:
         pass
 
-    # Check data feeds (recent market_data from worker)
+    # Check data feeds: use 24h window so outside market hours doesn't show offline
     if conn:
         try:
             row = await conn.fetchval(
-                "SELECT COUNT(*) FROM market_data WHERE time > NOW() - INTERVAL '1 hour'"
+                "SELECT COUNT(*) FROM market_data WHERE time > NOW() - INTERVAL '24 hours'"
             )
             if row and row > 0:
                 result["data_feeds"] = "online"
+            else:
+                # No data at all yet (fresh install)
+                result["data_feeds"] = "no data"
         except Exception:
             pass
         await conn.close()
