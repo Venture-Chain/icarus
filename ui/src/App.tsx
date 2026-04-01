@@ -12,6 +12,8 @@ import QuantumLab from './components/QuantumLab'
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5100'
 const WS_URL = API_URL.replace('http', 'ws') + '/ws'
 
+type LoadingStatus = 'connecting' | 'loading-accounts' | 'ready' | 'offline'
+
 export interface Alert {
   id: number
   type: string
@@ -48,8 +50,51 @@ function App() {
   const [quantumAvailable, setQuantumAvailable] = useState(false)
   const [view, setView] = useState<View>('control-room')
   const [selectedAccount, setSelectedAccount] = useState('')
+  const [loadingStatus, setLoadingStatus] = useState<LoadingStatus>('connecting')
+  const [visible, setVisible] = useState(false)
   const wsRef = useRef<WebSocket | null>(null)
   const now = useCurrentTime()
+
+  useEffect(() => {
+    let cancelled = false
+    const timeout = setTimeout(() => {
+      if (!cancelled && loadingStatus === 'connecting') {
+        setLoadingStatus('offline')
+      }
+    }, 5000)
+
+    fetch(`${API_URL}/health`)
+      .then(r => {
+        if (!r.ok) throw new Error('health check failed')
+        return r.json()
+      })
+      .then(() => {
+        if (cancelled) return
+        clearTimeout(timeout)
+        setLoadingStatus('loading-accounts')
+        setTimeout(() => {
+          if (!cancelled) setLoadingStatus('ready')
+        }, 600)
+      })
+      .catch(() => {
+        if (!cancelled) {
+          clearTimeout(timeout)
+          setLoadingStatus('offline')
+        }
+      })
+
+    return () => {
+      cancelled = true
+      clearTimeout(timeout)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (loadingStatus === 'ready') {
+      const t = setTimeout(() => setVisible(true), 300)
+      return () => clearTimeout(t)
+    }
+  }, [loadingStatus])
 
   useEffect(() => {
     const connect = () => {
@@ -84,6 +129,51 @@ function App() {
       .then(data => setQuantumAvailable(data.enabled === true))
       .catch(() => setQuantumAvailable(false))
   }, [])
+
+  const handleRetry = () => {
+    setLoadingStatus('connecting')
+    fetch(`${API_URL}/health`)
+      .then(r => {
+        if (!r.ok) throw new Error('health check failed')
+        return r.json()
+      })
+      .then(() => {
+        setLoadingStatus('loading-accounts')
+        setTimeout(() => setLoadingStatus('ready'), 600)
+      })
+      .catch(() => setLoadingStatus('offline'))
+  }
+
+  const statusLabel: Record<LoadingStatus, string> = {
+    connecting: 'Connecting to API...',
+    'loading-accounts': 'Loading accounts...',
+    ready: 'Ready',
+    offline: 'API offline',
+  }
+
+  if (loadingStatus !== 'ready' || !visible) {
+    return (
+      <div className={`loading-screen ${loadingStatus === 'offline' ? 'loading-screen--offline' : ''}`}>
+        <div className="loading-inner">
+          <div className="loading-logo">ICARUS</div>
+          <div className="loading-tagline">Quantitative Trading Framework</div>
+          {loadingStatus !== 'offline' && (
+            <div className="loading-dots">
+              <span /><span /><span />
+            </div>
+          )}
+          <div className={`loading-status ${loadingStatus === 'offline' ? 'loading-status--error' : ''}`}>
+            {statusLabel[loadingStatus]}
+          </div>
+          {loadingStatus === 'offline' && (
+            <button className="loading-retry" onClick={handleRetry}>
+              Retry Connection
+            </button>
+          )}
+        </div>
+      </div>
+    )
+  }
 
   const marketOpen = isMarketOpen(now)
   const timeStr = now.toLocaleTimeString('en-US', {
