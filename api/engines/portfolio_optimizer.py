@@ -358,12 +358,17 @@ class PortfolioOptimizer:
         cvar_expr = t + (1.0 / (1.0 - confidence)) * (p @ u)
         objective = cp.Minimize(risk_aversion * cvar_expr - mu @ w)
 
-        # Ensure weight bounds are feasible with the budget constraint.
-        # If n * max_weight < 1, relax max_weight so the problem is solvable.
+        # Feasibility check: sum(w) == 1 requires max_weight >= 1/n.
+        # If the caller's limit is too tight, relax to the exact minimum and warn.
         w_max = constraints.max_weight
         w_min = constraints.min_weight
-        if n * w_max < 1.0:
-            w_max = 1.0 / n + 0.1  # allow headroom above equal weight
+        min_feasible = 1.0 / n
+        if w_max < min_feasible:
+            log.warning(
+                "max_weight=%.2f is infeasible for %d assets (need >= %.2f), relaxing to %.2f",
+                w_max, n, min_feasible, min_feasible,
+            )
+            w_max = min_feasible
 
         # Constraints
         cons = [

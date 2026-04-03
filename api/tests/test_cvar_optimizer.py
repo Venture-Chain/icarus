@@ -93,3 +93,17 @@ class TestCvarOptimizer:
         result = optimizer.cvar(["A", "B"], returns)
         assert result.method == "cvar"
         assert abs(sum(result.weights.values()) - 1.0) < 0.01
+
+    def test_infeasible_weight_warns_and_relaxes(self, optimizer, sample_returns, caplog):
+        """When max_weight is too tight for the asset count, warn and relax to 1/n."""
+        tickers = ["A", "B", "C"]
+        returns_3 = sample_returns[:, :3]
+        constraints = OptimizationConstraints(min_weight=0.0, max_weight=0.10)
+        import logging
+        with caplog.at_level(logging.WARNING, logger="icarus.optimizer"):
+            result = optimizer.cvar(tickers, returns_3, constraints=constraints)
+        assert result.method == "cvar"
+        assert "infeasible" in caplog.text
+        assert "relaxing" in caplog.text
+        # Weights should still be valid (sum to 1, no weight exceeds relaxed bound)
+        assert abs(sum(result.weights.values()) - 1.0) < 0.01
