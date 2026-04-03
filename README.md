@@ -1,48 +1,41 @@
 # Icarus
 
-Open-source quantitative trading framework. Monitor your portfolio, automate day trading strategies, and research markets with smart money data, sentiment analysis, and AI-assisted workflows.
+Open-source quantitative trading framework. Monitor your portfolio, automate trading strategies, and research markets with smart money data, sentiment analysis, and AI-assisted workflows.
 
 Built by [Venture Chain](https://venture-chain.com). Apache 2.0.
 
 ## What Icarus Does
 
-- **Portfolio Monitoring**: Connect Interactive Brokers for read-only portfolio tracking, P&L, and risk metrics
-- **Automated Day Trading**: Deploy strategies to Alpaca (zero commission) with paper and live modes
-- **Three-Layer Algorithm**: Pattern scanner + ML confidence filter (XGBoost) + context check (news, sentiment, smart money rules)
-- **Smart Money Data**: Dark pool volume (FINRA ATS), congressional trades, insider Form 4 purchases, short interest
+- **Multi-Strategy Trading**: Deploy multiple strategies simultaneously (day trading, sector rotation, VIX hedging) with independent risk controls per deployment
+- **Broker-First Position Tracking**: Alpaca API is the source of truth for positions. The orders table provides deployment ownership mapping, but actual holdings are always verified against the broker
+- **Three-Layer Algorithm**: Pattern scanner (breakouts, VWAP, opening range) + ML confidence filter (XGBoost) + context check (news, sentiment, smart money)
+- **Smart Money Data**: Dark pool volume (FINRA ATS), congressional trades, insider Form 4 purchases, short interest, confluence scoring 0-100
 - **Sentiment Analysis**: FinBERT GPU-accelerated scoring on every news headline
-- **Confluence Scoring**: 0-100 conviction score combining all smart money signals
-- **Risk Controls**: No overnight positions (hard flatten at 3:55 PM ET), 2% daily loss limit, max 3 concurrent positions, emergency kill switch
-- **Research Tools**: Walk-forward backtesting, Monte Carlo projections, scenario analysis (bull/bear/recession/rate hike)
-- **AI Skills**: 16 Claude agent skills for market reports, portfolio status, risk checks, research workflows, and more
+- **Risk Controls**: Per-deployment position limits, daily loss limits, hard EOD flatten at 3:55 PM ET for day trading, startup flatten safety net, emergency kill switch in header
+- **Trade Journal**: Real-time signal and order logging with strategy attribution, displayed in the Control Room
+- **Portfolio Optimization**: Mean-variance, risk parity, Black-Litterman, minimum variance, and Mean-CVaR (tail-risk-aware allocation via CVXPY)
+- **Research Tools**: Walk-forward backtesting, Monte Carlo projections, scenario analysis, CVaR optimization endpoint
 - **Control Room**: React dashboard with real-time WebSocket updates, terminal aesthetic
 
 ## What Icarus Does NOT Do
 
-Icarus is a framework, not a strategy. It does not ship with strategies that make money.
-The example strategies (MA crossover, mean reversion) are educational.
-You bring the alpha. Proprietary strategies go in `research/` (gitignored).
+Icarus is a framework, not a strategy. It does not ship with trading strategies. You bring the alpha. Place your strategies in `research/strategies/` (gitignored) and the engine auto-discovers them at startup.
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────┐
-│           Control Room (React + Vite)        │
-└──────────────────┬──────────────────────────┘
-                   │ REST + WebSocket
-┌──────────────────┴──────────────────────────┐
-│             Icarus API (FastAPI)              │
-│  Data · Strategy · Risk · Notifications      │
-└──┬─────┬─────┬──────┬──────┬───────┬────────┘
-   │     │     │      │      │       │
-┌──▼──┐ ┌▼───┐ ┌▼────┐ ┌▼────┐ ┌▼──────┐ ┌▼──────┐
-│ IB  │ │Time│ │Redis│ │Work-│ │Runner │ │News & │
-│ GW  │ │scal│ │     │ │er   │ │       │ │Smart$ │
-│     │ │eDB │ │     │ │+Fin │ │Strat  │ │Monit- │
-│read │ │    │ │pub/ │ │BERT │ │exec + │ │ors    │
-│only │ │24  │ │sub  │ │GPU  │ │paper  │ │       │
-└─────┘ │tbl │ └─────┘ └─────┘ └───────┘ └───────┘
-        └────┘
+                    Control Room (React + Vite)
+                           |
+                    REST + WebSocket
+                           |
+                    Icarus API (FastAPI)
+            Data . Strategy . Risk . Trade Log
+           /       |         |        |        \
+     IB Gateway  TimescaleDB  Redis  Worker    Runner
+     (read-only) (24 tables)  (pub/  (+FinBERT (+strategies
+      portfolio    signals,    sub,   GPU,      +broker orders
+      monitoring)  orders,     cache) intraday  +flatten loop
+                   market_data)       backfill) +snapshots)
 ```
 
 ## Quick Start
@@ -98,70 +91,41 @@ class MyStrategy(BaseStrategy):
         return []
 ```
 
-Place it in `api/strategies/` for auto-discovery. Private strategies go in `research/strategies/` (gitignored).
+Place it in `research/strategies/` and the engine auto-discovers it at startup. Both the API and runner containers mount `./research:/research`. The `research/` directory is gitignored, so your strategies stay private.
 
-## Deploying a Strategy
-
-```bash
-# List available strategies
-curl http://localhost:5100/strategies/
-
-# Deploy to paper trading
-curl -X PUT http://localhost:5100/strategies/my_strategy/deploy \
-  -H "Content-Type: application/json" \
-  -d '{"mode": "paper", "account_id": "alpaca-paper", "universe": ["RKLB", "LUNR", "ASTS"], "capital": 10000}'
-```
-
-The runner executes during market hours, flattens all positions at 3:55 PM ET, and saves performance snapshots every 5 minutes.
+Strategies are deployed via the `strategy_deployments` and `deployment_config` tables. Each deployment has its own universe, capital allocation, position limits, and overnight rules.
 
 ## Services
 
 | Service | Port | Purpose |
 |---|---|---|
 | Icarus API | 5100 | FastAPI REST + WebSocket |
-| Control Room | 5101 | React dashboard |
-| TimescaleDB | 5102 | Time-series database (24 tables) |
+| Control Room | 5101 | React dashboard (5-panel grid, kill switch in header) |
+| TimescaleDB | 5102 | Time-series database (market_data, signals, orders, deployments) |
 | Redis | 5103 | Cache + streams + pub/sub |
-| IB Gateway | 5104 | Interactive Brokers API |
+| IB Gateway | 5104 | Interactive Brokers API (read-only) |
 | IB Gateway VNC | 5105 | Browser UI for IB login + 2FA |
-| Worker | (bg) | Data ingestion + FinBERT sentiment |
-| Runner | (bg) | Strategy execution + paper trading |
-| News Monitor | (bg) | 24/7 news alert generation |
-| Smart Money Monitor | (bg) | Dark pool + congressional trade alerts |
+| Worker | (bg) | Data ingestion: 1-min bars, intraday backfill, FinBERT sentiment |
+| Runner | (bg) | Strategy execution, broker orders, flatten loop, snapshots |
+
+## Key Design Decisions
+
+- **Broker is source of truth**: Positions are fetched from Alpaca each run cycle. The orders table is a log for deployment attribution, not state.
+- **asyncpg binary protocol**: TimescaleDB writes use Python datetime objects, not SQL CAST strings. The `_parse_ts()` helper in db_writer handles all timestamp conversion.
+- **Independent coroutines**: The runner uses `asyncio.gather(return_exceptions=True)` so the flatten loop survives even if the run loop or VIX updater crashes.
+- **Startup flatten**: If the runner starts outside market hours and finds day trading positions still open, it flattens them immediately as a safety net.
 
 ## Data Sources
 
 | Source | Data | Update Frequency |
 |---|---|---|
-| Alpaca | 1-min and 5-min price bars | Real-time during market hours |
+| Alpaca | 1-min and 5-min price bars, order execution | Real-time during market hours |
 | Finnhub | News, fundamentals, economic calendar | 5 min (news), daily (calendar) |
+| yfinance | VIX (^VIX), fallback price data | 5 min |
 | FINRA ATS | Dark pool volume | Weekly (Saturday) |
 | Quiver Quant | Congressional trades, short interest | Daily |
 | SEC EDGAR | Insider Form 4 filings | Daily |
 | Alpha Vantage | Fallback price data | 60 min |
-
-## AI Agent Skills
-
-Icarus ships with 16 Claude agent skills for AI-assisted workflows:
-
-| Skill | What it does |
-|---|---|
-| `/market-open` | Morning briefing: overnight news, pre-market, smart money alerts |
-| `/market-close` | End-of-day wrap: P&L, trades, flatten confirmation |
-| `/market-report` | 10-section comprehensive market analysis |
-| `/portfolio-status` | Positions, risk metrics, news on holdings |
-| `/risk-check` | Limit utilization, VaR, stress scenarios |
-| `/strategies` | Algorithm status, deployments, performance |
-| `/smart-money` | Dark pool, congressional, insider, confluence review |
-| `/notifications` | Triage alerts by severity and type |
-| `/backtest` | Run and analyze a backtest |
-| `/projection` | Monte Carlo and scenario analysis |
-| `/research` | Full stock research with smart money confluence |
-| `/hypothesis` | Test a trading hypothesis with data |
-| `/deploy-strategy` | Deploy a strategy to paper or live |
-| `/regime` | Market regime analysis (VIX, sectors, breadth) |
-| `/universe` | Manage the algorithm's ticker universe |
-| `/weekly-review` | Weekly performance and pattern analysis |
 
 ## Tech Stack
 
@@ -169,6 +133,7 @@ Icarus ships with 16 Claude agent skills for AI-assisted workflows:
 - **PostgreSQL 16** + TimescaleDB (time-series hypertables)
 - **Redis 7** (cache + streams + pub/sub)
 - **React 19** + TypeScript + Vite
+- **CVXPY** + CLARABEL for convex portfolio optimization (Mean-CVaR)
 - **XGBoost / LightGBM** for ML models
 - **FinBERT** (ProsusAI/finbert) for GPU sentiment analysis
 - **Interactive Brokers** (read-only) + **Alpaca** (automated trading)
