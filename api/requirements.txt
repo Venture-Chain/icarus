@@ -13,4 +13,5 @@ websockets==13.0
 scikit-learn>=1.4.0
 alpaca-py>=0.28.0
 scipy>=1.12.0
+cvxpy>=1.6.0
 hlquantum>=0.1.3

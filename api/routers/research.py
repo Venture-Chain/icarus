@@ -34,6 +34,16 @@ class ScenarioRequest(BaseModel):
     scenarios: list[str] = ["base", "bull", "bear", "recession", "rate_hike"]
 
 
+class CvarOptimizeRequest(BaseModel):
+    universe: list[str]
+    lookback_days: int = 252
+    confidence: float = 0.95
+    risk_aversion: float = 1.0
+    max_weight: float = 0.10
+    min_weight: float = -0.10
+    max_gross_exposure: float = 2.0
+
+
 class ResearchLogEntry(BaseModel):
     hypothesis: str
     methodology: str = ""
@@ -281,6 +291,80 @@ async def scenario_projection(body: ScenarioRequest, request: Request):
         "base_annual_volatility": round(base_annual_vol * 100, 2),
         "scenarios": results,
         "expected_value": round(expected_value, 2),
+    }
+
+
+@router.post("/optimize/cvar")
+async def cvar_optimize(body: CvarOptimizeRequest, request: Request):
+    """Run Mean-CVaR portfolio optimization on a universe of tickers."""
+    import pandas as pd
+    from engines.portfolio_optimizer import OptimizationConstraints, PortfolioOptimizer
+
+    pool = request.app.state.db_pool
+
+    if len(body.universe) < 2:
+        return {"error": "need at least 2 tickers"}
+
+    # Fetch daily close prices for the lookback period
+    rows = await pool.fetch("""
+        SELECT ticker, time::date as date, close
+        FROM market_data
+        WHERE ticker = ANY($1)
+          AND time > NOW() - ($2 || ' days')::interval
+        ORDER BY ticker, time
+    """, body.universe, str(body.lookback_days))
+
+    if not rows:
+        return {"error": "no price data for the given universe"}
+
+    # Build returns matrix
+    price_data: dict[str, list] = {}
+    for r in rows:
+        ticker = r["ticker"]
+        if ticker not in price_data:
+            price_data[ticker] = []
+        price_data[ticker].append({"date": r["date"], "close": float(r["close"])})
+
+    # Align tickers that have data
+    tickers = [t for t in body.universe if t in price_data and len(price_data[t]) > 20]
+    if len(tickers) < 2:
+        return {"error": "insufficient price data (need >20 days for at least 2 tickers)"}
+
+    # Compute daily log returns per ticker, align by date
+    returns_by_ticker = {}
+    for ticker in tickers:
+        df = pd.DataFrame(price_data[ticker]).set_index("date").sort_index()
+        returns_by_ticker[ticker] = np.log(df["close"] / df["close"].shift(1)).dropna()
+
+    # Align on common dates
+    returns_df = pd.DataFrame(returns_by_ticker).dropna()
+    if len(returns_df) < 20:
+        return {"error": "insufficient overlapping data across tickers"}
+
+    aligned_tickers = list(returns_df.columns)
+    returns_matrix = returns_df.values  # (n_days, n_assets)
+
+    constraints = OptimizationConstraints(
+        min_weight=body.min_weight,
+        max_weight=body.max_weight,
+        max_gross_exposure=body.max_gross_exposure,
+    )
+
+    optimizer = PortfolioOptimizer()
+    result = optimizer.cvar(
+        tickers=aligned_tickers,
+        returns=returns_matrix,
+        constraints=constraints,
+        confidence=body.confidence,
+        risk_aversion=body.risk_aversion,
+    )
+
+    return {
+        "tickers": aligned_tickers,
+        "lookback_days": len(returns_df),
+        "confidence": body.confidence,
+        "risk_aversion": body.risk_aversion,
+        "result": result.to_dict(),
     }
 
 

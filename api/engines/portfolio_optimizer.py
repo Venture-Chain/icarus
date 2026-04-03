@@ -1,11 +1,12 @@
 """
 Portfolio optimization engine.
-Mean-variance, risk parity, Black-Litterman, with constraints.
+Mean-variance, risk parity, Black-Litterman, CVaR, with constraints.
 Signal-level constraint enforcement for sector rotation deployments.
 """
 import logging
 from dataclasses import dataclass, field
 
+import cvxpy as cp
 import numpy as np
 
 from strategies.base import Signal
@@ -31,13 +32,14 @@ class OptimizationResult:
     expected_return: float = 0
     expected_risk: float = 0
     sharpe_ratio: float = 0
+    cvar: float = 0
     gross_exposure: float = 0
     net_exposure: float = 0
     turnover: float = 0
     method: str = ""
 
     def to_dict(self) -> dict:
-        return {
+        d = {
             "weights": {k: round(v, 4) for k, v in self.weights.items() if abs(v) > 0.001},
             "expected_return": round(self.expected_return * 100, 2),
             "expected_risk": round(self.expected_risk * 100, 2),
@@ -49,6 +51,9 @@ class OptimizationResult:
             "long_positions": sum(1 for v in self.weights.values() if v > 0.001),
             "short_positions": sum(1 for v in self.weights.values() if v < -0.001),
         }
+        if self.cvar != 0:
+            d["cvar"] = round(self.cvar * 100, 2)
+        return d
 
 
 class PortfolioOptimizer:
@@ -290,6 +295,129 @@ class PortfolioOptimizer:
             return result
 
         except np.linalg.LinAlgError:
+            return self.equal_weight(tickers)
+
+    def cvar(
+        self,
+        tickers: list[str],
+        returns: np.ndarray,
+        constraints: OptimizationConstraints | None = None,
+        confidence: float = 0.95,
+        risk_aversion: float = 1.0,
+    ) -> OptimizationResult:
+        """
+        Mean-CVaR optimization using the Rockafellar-Uryasev LP formulation.
+
+        Minimizes: lambda * CVaR(alpha) - expected_return
+        where CVaR is the expected loss in the worst (1-alpha) scenarios.
+
+        Args:
+            tickers: asset ticker symbols
+            returns: (n_scenarios, n_assets) matrix of return scenarios
+            constraints: weight bounds and exposure limits
+            confidence: CVaR confidence level (0.95 = worst 5% of scenarios)
+            risk_aversion: tradeoff between return and tail risk (higher = more conservative)
+        """
+        constraints = constraints or OptimizationConstraints()
+        n = len(tickers)
+
+        if n == 0 or returns.shape[0] == 0:
+            return OptimizationResult(method="cvar")
+
+        if returns.shape[1] != n:
+            log.error("returns matrix columns (%d) != tickers (%d)", returns.shape[1], n)
+            return OptimizationResult(method="cvar")
+
+        n_scenarios = returns.shape[0]
+        mu = np.mean(returns, axis=0)
+
+        # Auto-scale risk aversion so lambda is comparable across different universes.
+        # Scale by max(single-asset return / single-asset CVaR).
+        alpha_idx = int(np.floor((1 - confidence) * n_scenarios))
+        if alpha_idx < 1:
+            alpha_idx = 1
+        scalar = 0.0
+        for i in range(n):
+            sorted_losses = np.sort(-returns[:, i])
+            asset_cvar = float(np.mean(sorted_losses[:alpha_idx]))
+            if asset_cvar > 1e-8:
+                scalar = max(scalar, abs(mu[i]) / asset_cvar)
+        if scalar > 0:
+            risk_aversion *= scalar
+
+        # Decision variables
+        w = cp.Variable(n, name="w")            # portfolio weights
+        t = cp.Variable(name="t")               # VaR threshold
+        u = cp.Variable(n_scenarios, name="u")   # excess losses per scenario
+
+        # Uniform scenario probabilities
+        p = np.ones(n_scenarios) / n_scenarios
+
+        # Objective: minimize lambda * CVaR - expected return
+        # CVaR = t + 1/(1-alpha) * sum(p_j * u_j)
+        cvar_expr = t + (1.0 / (1.0 - confidence)) * (p @ u)
+        objective = cp.Minimize(risk_aversion * cvar_expr - mu @ w)
+
+        # Ensure weight bounds are feasible with the budget constraint.
+        # If n * max_weight < 1, relax max_weight so the problem is solvable.
+        w_max = constraints.max_weight
+        w_min = constraints.min_weight
+        if n * w_max < 1.0:
+            w_max = 1.0 / n + 0.1  # allow headroom above equal weight
+
+        # Constraints
+        cons = [
+            # Scenario loss constraints: u_j >= -(returns[j,:] @ w) - t
+            # Vectorized: u >= -returns @ w - t
+            u >= -(returns @ w) - t,
+            u >= 0,
+            # Budget: weights sum to 1 (fully invested)
+            cp.sum(w) == 1,
+            # Weight bounds
+            w >= w_min,
+            w <= w_max,
+        ]
+
+        # Leverage constraint (L1 norm of weights)
+        if constraints.max_gross_exposure < 10:
+            cons.append(cp.norm(w, 1) <= constraints.max_gross_exposure)
+
+        try:
+            problem = cp.Problem(objective, cons)
+            problem.solve(solver=cp.CLARABEL, warm_start=True)
+
+            if problem.status not in ("optimal", "optimal_inaccurate"):
+                log.warning("CVaR solver status: %s, falling back to equal weight", problem.status)
+                return self.equal_weight(tickers)
+
+            weights_arr = w.value
+            if weights_arr is None:
+                log.warning("CVaR solver returned None weights, falling back to equal weight")
+                return self.equal_weight(tickers)
+
+            # Zero out tiny weights
+            weights_arr[np.abs(weights_arr) < 1e-4] = 0
+
+            weights = {tickers[i]: float(weights_arr[i]) for i in range(n)}
+            result = self._build_result(weights, "cvar")
+
+            # Compute portfolio metrics
+            port_return = float(weights_arr @ mu)
+            port_losses = -returns @ weights_arr
+            sorted_losses = np.sort(port_losses)
+            cvar_value = float(np.mean(sorted_losses[-alpha_idx:]))
+            port_risk = float(np.std(returns @ weights_arr))
+
+            result.expected_return = port_return
+            result.expected_risk = port_risk
+            result.cvar = cvar_value
+            if port_risk > 0:
+                result.sharpe_ratio = (port_return - self.risk_free_rate / 252) / port_risk
+
+            return result
+
+        except cp.error.SolverError as e:
+            log.warning("CVaR solver error: %s, falling back to equal weight", e)
             return self.equal_weight(tickers)
 
     def _build_result(self, weights: dict[str, float], method: str) -> OptimizationResult:
