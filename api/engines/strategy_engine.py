@@ -5,6 +5,7 @@ Discovers strategies from configurable directories, manages lifecycle.
 import importlib
 import importlib.util
 import logging
+import sys
 from pathlib import Path
 
 from config import settings
@@ -43,11 +44,34 @@ class StrategyEngine:
 
     def _load_module(self, path: Path):
         """Load a strategy module and register any BaseStrategy subclasses."""
-        spec = importlib.util.spec_from_file_location(path.stem, path)
-        if not spec or not spec.loader:
-            return
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
+        # Check if this file is in any directory named "strategies" (could be /api/strategies or /app/strategies)
+        parent_dir = path.parent.resolve()
+        is_strategies_pkg = parent_dir.name == "strategies" and (parent_dir / "__init__.py").exists()
+
+        if is_strategies_pkg:
+            # Ensure the strategies package is importable from this directory
+            api_dir = str(parent_dir.parent)
+            if api_dir not in sys.path:
+                sys.path.insert(0, api_dir)
+            module_name = f"strategies.{path.stem}"
+            module = importlib.import_module(module_name)
+        else:
+            # Research or external strategies: load by file path.
+            # Pre-load sibling modules (like indicators.py) into the
+            # strategies package namespace so "from strategies.X import ..."
+            # resolves correctly for research strategy files.
+            self._preload_research_siblings(parent_dir)
+
+            module_name = f"research_strategies.{path.stem}"
+            if module_name in sys.modules:
+                module = sys.modules[module_name]
+            else:
+                spec = importlib.util.spec_from_file_location(module_name, path)
+                if not spec or not spec.loader:
+                    return
+                module = importlib.util.module_from_spec(spec)
+                sys.modules[module_name] = module
+                spec.loader.exec_module(module)
 
         for attr_name in dir(module):
             attr = getattr(module, attr_name)
@@ -62,6 +86,26 @@ class StrategyEngine:
                     log.info(f"registered strategy: {instance.name}")
                 except Exception as e:
                     log.error(f"failed to instantiate {attr_name}: {e}")
+
+    def _preload_research_siblings(self, directory: Path):
+        """Register helper modules from a research strategies directory
+        into the strategies.* namespace so imports like
+        'from strategies.indicators import ...' resolve correctly."""
+        for sibling in directory.glob("*.py"):
+            if sibling.name.startswith("_"):
+                continue
+            pkg_name = f"strategies.{sibling.stem}"
+            if pkg_name in sys.modules:
+                continue
+            try:
+                spec = importlib.util.spec_from_file_location(pkg_name, sibling)
+                if not spec or not spec.loader:
+                    continue
+                mod = importlib.util.module_from_spec(spec)
+                sys.modules[pkg_name] = mod
+                spec.loader.exec_module(mod)
+            except Exception:
+                pass  # non-critical: only needed if a strategy imports it
 
     def get_strategy(self, name: str) -> BaseStrategy | None:
         return self.loaded_strategies.get(name)
