@@ -22,6 +22,7 @@ This paper describes the architecture, details each gateway's role and implement
 Technical trading rules (breakout detection, mean reversion, momentum scoring) encode observable market structure. They work reliably in the regimes they were designed for. When regimes shift, they do not degrade gracefully. A momentum strategy calibrated for a trending market will generate false signals in a range-bound one. The rules themselves have no mechanism to recognize this.
 
 Common failure modes:
+
 - **Parameter rigidity**: A VWAP reclaim signal tuned to 60-second bars fails when volatility compresses
 - **No self-awareness**: Rules cannot evaluate whether their own assumptions still hold
 - **Signal saturation**: Multiple correlated rules fire simultaneously, creating false conviction
@@ -31,6 +32,7 @@ Common failure modes:
 Supervised models (XGBoost, LightGBM, neural networks) learn statistical relationships from historical data. They generalize well within the distribution they were trained on. Outside that distribution, they fail silently, still producing confident predictions with no indication of uncertainty.
 
 Common failure modes:
+
 - **Distribution shift**: A model trained on 2020-2023 data encounters a 2024 regime it has never seen
 - **Feature staleness**: Input features drift from the training distribution without triggering retraining
 - **Opacity**: A 0.72 confidence score from an ensemble offers no explanation for why
@@ -93,29 +95,33 @@ The first gateway encodes market microstructure into deterministic signals. Each
 Icarus ships with three categories of rule-based strategies:
 
 **Pattern Scanners** (intraday, 60-second interval):
+
 - Momentum breakouts above prior-day highs with volume confirmation
 - VWAP reclaim signals with ATR-based stop placement
 - Opening range breakout detection (first 15 minutes)
 
 **Rotation Strategies** (weekly rebalance):
-- Sector relative strength across 11 GICS sectors
+
+- Sector relative strength across 10 custom sectors (including thematic sectors like Space and Quantum)
 - Equal-weight allocation to top-ranked sectors
-- Lookback: 80 trading days
+- Dual-period rate of change (20-day fast, 50-day slow) with 200-day SMA trend filter
 
 **Hedging Overlays** (event-driven):
-- VIX regime detection: protective puts when VIX < 15, sell puts when VIX > 25
-- Greeks-aware position management
+
+- VIX regime-based hedging via inverse ETFs (SH, PSQ, UVXY)
+- VIX >= 25: allocate to broad inverse exposure. VIX >= 30: add leveraged volatility
+- Position sizing scaled by regime severity
 
 ### 3.2 Smart Money Confluence
 
 Rule-based signals are enriched by a confluence scoring engine that cross-references four institutional data sources:
 
-| Source | Window | Base Points | Strength Scaling |
-|---|---|---|---|
-| Dark pool volume (Z-score >= 2.0) | 14 days | 30 | Linear: (z - 2.0) / 2.0, capped at 1.0 |
-| Congressional trades | 45 days | 25 | Count-based: buys / 3, capped at 1.0 |
-| SEC Form 4 insider filings | 30 days | 25 | Count-based: filings / 3, capped at 1.0 |
-| Short interest trend | Latest | 20 | Magnitude: abs(change%) / 20, capped at 1.0 |
+| Source                            | Window  | Base Points | Strength Scaling                            |
+| --------------------------------- | ------- | ----------- | ------------------------------------------- |
+| Dark pool volume (Z-score >= 2.0) | 14 days | 30          | Linear: (z - 2.0) / 2.0, capped at 1.0      |
+| Congressional trades              | 45 days | 25          | Count-based: buys / 3, capped at 1.0        |
+| SEC Form 4 insider filings        | 30 days | 25          | Count-based: filings / 3, capped at 1.0     |
+| Short interest trend              | Latest  | 20          | Magnitude: abs(change%) / 20, capped at 1.0 |
 
 Sources are checked for alignment. If all signals point the same direction (bullish or bearish) with two or more sources active, the conviction score receives a 15% multiplier. Conflicting signals apply a 30% penalty. The final score is clamped to 0-100.
 
@@ -154,6 +160,7 @@ Icarus runs ProsusAI/FinBERT on every incoming headline in a dedicated GPU-accel
 The TimesFM 2.5 foundation model (Google Research, 2025) provides zero-shot return forecasts without task-specific training. The model ingests raw OHLCV time series and produces multi-horizon predictions that serve as an additional confidence signal.
 
 Key properties:
+
 - No fine-tuning required: works out of the box on any ticker
 - Handles multiple frequencies (1-min intraday through daily)
 - Produces prediction intervals, not just point estimates
@@ -187,6 +194,7 @@ The third gateway introduces AI agents that operate on top of the rule-based and
 Icarus integrates two specialized agents built on Claude (Anthropic):
 
 **Quantitative Research Agent** (Claude Opus):
+
 - Factor hypothesis evaluation with statistical significance testing
 - Strategy parameter tuning based on regime analysis
 - Cross-strategy correlation assessment
@@ -194,6 +202,7 @@ Icarus integrates two specialized agents built on Claude (Anthropic):
 - Full access to Icarus API endpoints, market data, and research artifacts
 
 **ML Operations Agent** (Claude Opus):
+
 - Feature engineering from raw market data
 - Model architecture selection and training (PyTorch, CUDA-accelerated)
 - Staleness detection: identifies when models need retraining
@@ -209,6 +218,7 @@ Agents provide three capabilities that rules and models cannot:
 **Parameter adaptation**: Strategy parameters (lookback periods, confidence thresholds, position sizing) are typically set during development and rarely updated. Agents continuously evaluate whether current parameters are appropriate for the regime. A research agent might determine that the 0.55 confidence threshold should tighten to 0.65 during a high-volatility period.
 
 **Research automation**: Agents conduct systematic research that would otherwise require manual quant effort:
+
 - Generate and test factor hypotheses
 - Run walk-forward backtests with Monte Carlo projections
 - Analyze negative results (strategies that should have worked but did not)
@@ -219,13 +229,13 @@ Agents provide three capabilities that rules and models cannot:
 
 Icarus exposes 17 agent-driven workflows for trading operations:
 
-| Category | Workflows |
-|---|---|
-| **Research** | Ticker deep-dive, hypothesis testing, factor evaluation |
-| **Market Assessment** | Pre-market analysis, market report, regime classification, weekly review |
-| **Risk** | Risk check (VaR/CVaR/drawdown), smart money analysis, Monte Carlo projection |
-| **Portfolio** | Portfolio status, strategy listing, universe review |
-| **Execution** | Strategy deployment (with safety gates), bull/bear debate generation |
+| Category              | Workflows                                                                    |
+| --------------------- | ---------------------------------------------------------------------------- |
+| **Research**          | Ticker deep-dive, hypothesis testing, factor evaluation                      |
+| **Market Assessment** | Pre-market analysis, market report, regime classification, weekly review     |
+| **Risk**              | Risk check (VaR/CVaR/drawdown), smart money analysis, Monte Carlo projection |
+| **Portfolio**         | Portfolio status, strategy listing, universe review                          |
+| **Execution**         | Strategy deployment (with safety gates), bull/bear debate generation         |
 
 Each workflow is a structured prompt that gives the agent access to relevant API endpoints, historical data, and the current portfolio state. The agent produces analysis, recommendations, or actions depending on the workflow.
 
@@ -234,11 +244,13 @@ Each workflow is a structured prompt that gives the agent access to relevant API
 Not all agent actions are autonomous. Icarus enforces a CIO (Chief Investment Officer) approval hierarchy:
 
 **Autonomous** (no approval needed):
+
 - Research, backtests, factor analysis, data retrieval
 - Market reports and regime assessments
 - Risk metric computation
 
 **Requires approval**:
+
 - Deploy strategy to paper or live trading
 - Modify risk limits or position sizing parameters
 - Activate kill switch
@@ -266,16 +278,16 @@ Risk management in Icarus is not a gateway. It is a constraint layer with uncond
 
 ### 6.1 Limit Structure
 
-| Limit | Threshold | Scope |
-|---|---|---|
-| Max single position | 10% of portfolio | Per-ticker concentration |
-| Max sector exposure | 30% of portfolio | GICS sector |
-| Max gross exposure | 200% of portfolio | Total long + short |
-| Max net exposure | 50% of portfolio | Long minus short |
-| Daily loss limit | 2% of portfolio | Resets at market open |
-| Max drawdown | 10% peak-to-trough | Circuit breaker (kill switch) |
-| VaR (95%) | 3% daily | Tail risk |
-| Correlation warning | 80% pairwise | Diversification |
+| Limit               | Threshold          | Scope                         |
+| ------------------- | ------------------ | ----------------------------- |
+| Max single position | 10% of portfolio   | Per-ticker concentration      |
+| Max sector exposure | 30% of portfolio   | GICS sector                   |
+| Max gross exposure  | 200% of portfolio  | Total long + short            |
+| Max net exposure    | 50% of portfolio   | Long minus short              |
+| Daily loss limit    | 2% of portfolio    | Resets at market open         |
+| Max drawdown        | 10% peak-to-trough | Circuit breaker (kill switch) |
+| VaR (95%)           | 3% daily           | Tail risk                     |
+| Correlation warning | 80% pairwise       | Diversification               |
 
 ### 6.2 Multi-Layer Enforcement
 
@@ -327,14 +339,14 @@ $$\mu_{BL} = \mu_{eq} + \tau\Sigma P^T (P\tau\Sigma P^T + \Omega)^{-1} (Q - P\mu
 
 All optimization methods respect hard constraints:
 
-| Constraint | Value |
-|---|---|
-| Position weight bounds | -10% to +10% |
-| Sector weight cap | 30% |
-| Gross exposure | 200% |
-| Net exposure | 50% |
-| Max turnover per rebalance | 50% |
-| Position count | 5 to 30 |
+| Constraint                 | Value        |
+| -------------------------- | ------------ |
+| Position weight bounds     | -10% to +10% |
+| Sector weight cap          | 30%          |
+| Gross exposure             | 200%         |
+| Net exposure               | 50%          |
+| Max turnover per rebalance | 50%          |
+| Position count             | 5 to 30      |
 
 ### 7.3 Execution
 
@@ -365,21 +377,22 @@ To evaluate the contribution of each gateway, we compare four configurations usi
 
 ### 8.2 Configuration Comparison
 
-| Metric | Rules Only | Rules + ML | Rules + ML + Agent | Benchmark (SPY) |
-|---|---|---|---|---|
-| Annual Return | 12.4% | 15.8% | 19.2% | 10.1% |
-| Sharpe Ratio | 0.68 | 0.94 | 1.31 | 0.52 |
-| Max Drawdown | -18.3% | -14.1% | -9.7% | -24.5% |
-| Win Rate | 51.2% | 56.8% | 61.4% | N/A |
-| Profit Factor | 1.24 | 1.52 | 1.89 | N/A |
-| Daily VaR (95%) | -2.1% | -1.7% | -1.2% | -2.4% |
-| Monthly Turnover | 340% | 220% | 160% | N/A |
+| Metric           | Rules Only | Rules + ML | Rules + ML + Agent | Benchmark (SPY) |
+| ---------------- | ---------- | ---------- | ------------------ | --------------- |
+| Annual Return    | 12.4%      | 15.8%      | 19.2%              | 10.1%           |
+| Sharpe Ratio     | 0.68       | 0.94       | 1.31               | 0.52            |
+| Max Drawdown     | -18.3%     | -14.1%     | -9.7%              | -24.5%          |
+| Win Rate         | 51.2%      | 56.8%      | 61.4%              | N/A             |
+| Profit Factor    | 1.24       | 1.52       | 1.89               | N/A             |
+| Daily VaR (95%)  | -2.1%      | -1.7%      | -1.2%              | -2.4%           |
+| Monthly Turnover | 340%       | 220%       | 160%               | N/A             |
 
 ### 8.3 Key Observations
 
 **ML filtering reduces noise**: Adding Gateway 2 improved the Sharpe ratio from 0.68 to 0.94 primarily by filtering out low-conviction signals. Win rate increased 5.6 percentage points while turnover dropped 35%. The ML layer is a precision filter, not a return generator.
 
 **Agents reduce drawdowns**: The most significant agent contribution is risk-adjusted performance. Maximum drawdown dropped from -14.1% to -9.7%, a 31% reduction. Agents achieved this by:
+
 - Reducing position sizes during detected regime transitions
 - Avoiding correlated signals that rules and ML both approved
 - Tightening confidence thresholds when VIX term structure inverted
@@ -479,5 +492,4 @@ Icarus demonstrates that the most impactful use of AI agents in quantitative tra
 
 ---
 
-*Icarus is developed by Venture Chain. Source code available at github.com/Venture-Chain/icarus.*
-*For questions, contact research@venturechain.co.*
+_Icarus is developed by Venture Chain. Source code available at github.com/Venture-Chain/icarus._
