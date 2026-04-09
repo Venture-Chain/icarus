@@ -11,7 +11,7 @@ Quantitative trading systems traditionally fall into two camps: rule-based syste
 
 Icarus introduces a **three-gateway architecture** that layers rule-based signal generation, ML confidence filtering, and AI agent orchestration into a composable pipeline. Each gateway operates independently but compounds the others. The result is a system where rules generate candidates, ML filters for conviction, and agents provide the adaptive judgment that neither rules nor models can supply alone.
 
-This paper describes the architecture, details each gateway's role and implementation, and presents benchmark comparisons across gateway configurations.
+This paper describes the architecture, details each gateway's role, and explains why the agent layer solves problems that the first two gateways cannot address on their own.
 
 ---
 
@@ -21,32 +21,47 @@ This paper describes the architecture, details each gateway's role and implement
 
 Technical trading rules (breakout detection, mean reversion, momentum scoring) encode observable market structure. They work reliably in the regimes they were designed for. When regimes shift, they do not degrade gracefully. A momentum strategy calibrated for a trending market will generate false signals in a range-bound one. The rules themselves have no mechanism to recognize this.
 
-Common failure modes:
-
-- **Parameter rigidity**: A VWAP reclaim signal tuned to 60-second bars fails when volatility compresses
-- **No self-awareness**: Rules cannot evaluate whether their own assumptions still hold
-- **Signal saturation**: Multiple correlated rules fire simultaneously, creating false conviction
+This is not a solvable problem within rule-based systems. Adding more rules to detect regime changes just creates a second rule-based system with the same brittleness one level up. The system needs something qualitatively different: the ability to reason about whether its own assumptions still hold.
 
 ### 1.2 ML Model Limitations
 
 Supervised models (XGBoost, LightGBM, neural networks) learn statistical relationships from historical data. They generalize well within the distribution they were trained on. Outside that distribution, they fail silently, still producing confident predictions with no indication of uncertainty.
 
-Common failure modes:
+The core issue is that ML models are function approximators, not reasoning systems. A confidence score of 0.72 from an ensemble tells you nothing about whether the model's training distribution resembles today's market. The model cannot distinguish between "I have high confidence because this looks like patterns I've seen before" and "I have high confidence because I've never seen anything like this and I'm extrapolating."
 
-- **Distribution shift**: A model trained on 2020-2023 data encounters a 2024 regime it has never seen
-- **Feature staleness**: Input features drift from the training distribution without triggering retraining
-- **Opacity**: A 0.72 confidence score from an ensemble offers no explanation for why
-- **Lookahead bias**: Subtle data leakage during training inflates backtest performance
+This distinction matters enormously in markets, where the moments of highest model confidence are often the moments of greatest regime fragility.
 
 ### 1.3 The Missing Layer
 
-Neither approach adapts well to the question: "Should I trust this signal right now?" Rules cannot reason about context. Models cannot reason about themselves. What is missing is a layer that can evaluate the outputs of both, apply judgment about current market conditions, and make decisions that account for uncertainty.
+Neither approach adapts well to the question: "Should I trust this signal right now?"
+
+Rules cannot reason about context. Models cannot reason about themselves. What is missing is a layer that can evaluate the outputs of both, apply judgment about current market conditions, and make decisions that account for uncertainty. Not statistical uncertainty (which models handle), but epistemic uncertainty: the kind where you do not know what you do not know.
 
 This is the role of the agent gateway.
 
 ---
 
-## 2. Architecture Overview
+## 2. Related Work
+
+### 2.1 Existing Quantitative Frameworks
+
+Open-source quantitative trading frameworks (Zipline, QuantConnect/Lean, Backtrader, VectorBT) provide backtesting engines, event-driven architectures, and broker integrations. These frameworks treat strategy logic as a monolithic block: data goes in, orders come out. There is no architectural separation between signal generation, confidence assessment, and contextual judgment. A strategy in Zipline handles all three concerns in a single `handle_data()` function.
+
+This is adequate when the entire decision-making process can be expressed as code. It breaks down when some decisions require reasoning that cannot be predetermined.
+
+### 2.2 ML-Augmented Trading Systems
+
+Research platforms like FinRL and TradingGym integrate reinforcement learning into trading workflows. These systems replace rule-based logic with learned policies, treating trading as a sequential decision problem. The improvement over static rules is genuine, but the failure mode shifts rather than disappears: RL agents are notoriously sensitive to reward function design, suffer from non-stationarity in financial data, and provide even less interpretability than supervised models.
+
+### 2.3 Where Icarus Differs
+
+Icarus does not replace any layer with another. It composes three distinct approaches into a pipeline where each layer's output is evaluated by the next. The architecture assumes that no single approach is sufficient and that the value of composition comes from the ability to override: rules generate broadly, ML filters statistically, agents filter contextually.
+
+The agent layer is not a more sophisticated model. It is a qualitatively different kind of system: one that can reason about the outputs of models rather than just producing its own.
+
+---
+
+## 3. Architecture Overview
 
 Icarus processes trading decisions through three sequential gateways. Each gateway can operate independently, but the architecture is designed for composition.
 
@@ -86,98 +101,66 @@ Icarus processes trading decisions through three sequential gateways. Each gatew
 
 ---
 
-## 3. Gateway 1: Rule-Based Signal Generation
+## 4. Gateway 1: Rule-Based Signal Generation
 
 The first gateway encodes market microstructure into deterministic signals. Each strategy implementation produces a list of `Signal` objects with ticker, direction (long/short/hedge/close), confidence, sizing method, and metadata.
 
-### 3.1 Signal Types
+### 4.1 Signal Types
 
 Icarus ships with three categories of rule-based strategies:
 
 **Pattern Scanners** (intraday, 60-second interval):
-
-- Momentum breakouts above prior-day highs with volume confirmation
-- VWAP reclaim signals with ATR-based stop placement
-- Opening range breakout detection (first 15 minutes)
+Momentum breakouts above prior-day highs with volume confirmation, VWAP reclaim signals with ATR-based stop placement, and opening range breakout detection. These operate on the shortest timeframe and generate the highest volume of candidate signals.
 
 **Rotation Strategies** (weekly rebalance):
-
-- Sector relative strength across 10 custom sectors (including thematic sectors like Space and Quantum)
-- Equal-weight allocation to top-ranked sectors
-- Dual-period rate of change (20-day fast, 50-day slow) with 200-day SMA trend filter
+Sector relative strength across a custom sector taxonomy, with equal-weight allocation to top-ranked sectors. Uses dual-period rate of change (fast and slow) with a long-term trend filter to avoid rotating into declining sectors.
 
 **Hedging Overlays** (event-driven):
+VIX regime-based hedging via inverse ETFs, with position sizing scaled by regime severity. These strategies activate only when volatility conditions warrant protection, not on a fixed schedule.
 
-- VIX regime-based hedging via inverse ETFs (SH, PSQ, UVXY)
-- VIX >= 25: allocate to broad inverse exposure. VIX >= 30: add leveraged volatility
-- Position sizing scaled by regime severity
+### 4.2 Smart Money Confluence
 
-### 3.2 Smart Money Confluence
+Rule-based signals are enriched by a confluence scoring engine that cross-references four institutional data sources: dark pool volume anomalies, congressional trading disclosures, SEC Form 4 insider filings, and short interest trends.
 
-Rule-based signals are enriched by a confluence scoring engine that cross-references four institutional data sources:
+Each source contributes to a conviction score (0-100) based on signal strength and recency. When multiple sources align in the same direction, the score receives a bonus multiplier. Conflicting signals apply a penalty. The result is a single number that captures how much institutional activity supports or contradicts a given signal.
 
-| Source                            | Window  | Base Points | Strength Scaling                            |
-| --------------------------------- | ------- | ----------- | ------------------------------------------- |
-| Dark pool volume (Z-score >= 2.0) | 14 days | 30          | Linear: (z - 2.0) / 2.0, capped at 1.0      |
-| Congressional trades              | 45 days | 25          | Count-based: buys / 3, capped at 1.0        |
-| SEC Form 4 insider filings        | 30 days | 25          | Count-based: filings / 3, capped at 1.0     |
-| Short interest trend              | Latest  | 20          | Magnitude: abs(change%) / 20, capped at 1.0 |
+The confluence score is not a trading signal itself. It is metadata that enriches existing signals, giving both the ML layer and the agent layer additional context for evaluation.
 
-Sources are checked for alignment. If all signals point the same direction (bullish or bearish) with two or more sources active, the conviction score receives a 15% multiplier. Conflicting signals apply a 30% penalty. The final score is clamped to 0-100.
-
-### 3.3 Limitations Addressed by Gateway 2
+### 4.3 Limitations Addressed by Gateway 2
 
 Rule-based signals have no mechanism to evaluate their own reliability. A momentum breakout signal fires identically whether the broader regime supports momentum or not. The confidence field at this stage reflects signal strength within the strategy's own logic, not a probability of profitability. That calibration is the job of Gateway 2.
 
 ---
 
-## 4. Gateway 2: ML Confidence Filtering
+## 5. Gateway 2: ML Confidence Filtering
 
 The second gateway applies machine learning models to filter and score signals from Gateway 1. The goal is not to generate new signals but to evaluate whether existing ones are likely to be profitable given current conditions.
 
-### 4.1 Confidence Scoring
+### 5.1 Confidence Scoring
 
-An XGBoost classifier trained on historical signal outcomes assigns a confidence score to each rule-based signal. The model considers:
+An XGBoost classifier trained on historical signal outcomes assigns a confidence score to each rule-based signal. The model considers signal features (direction, magnitude, time of day), market context (VIX level, SPY returns, sector momentum), volume profile (relative volume, dark pool activity), and sentiment scores from news and filings.
 
-- Signal features (direction, magnitude, time of day)
-- Market context (VIX level, SPY returns, sector momentum)
-- Volume profile (relative volume, dark pool activity)
-- Sentiment (FinBERT scores from news and filings)
+Signals below a configurable confidence threshold are filtered out. This is where the bulk of noise reduction happens: a majority of rule-based signals are rejected at this stage, leaving only those where statistical evidence supports the directional thesis.
 
-Signals below a configurable confidence threshold (default: 0.55) are filtered out. This reduces false positives from the rule-based layer while preserving high-conviction opportunities.
+### 5.2 Sentiment Analysis
 
-### 4.2 Sentiment Analysis
+Icarus runs FinBERT (a BERT model fine-tuned for financial text) on every incoming headline in a dedicated GPU-accelerated worker. Sentiment scores are stored in TimescaleDB for historical analysis, injected into strategy context, used as features in the confidence model, and available for agent-driven research workflows.
 
-Icarus runs ProsusAI/FinBERT on every incoming headline in a dedicated GPU-accelerated worker. Sentiment scores (positive/negative/neutral with magnitude) are:
+The value of continuous sentiment processing is not any individual score but the time series it produces. Sentiment momentum (the rate of change in aggregate sentiment for a ticker) is often a better signal than point-in-time sentiment.
 
-- Stored in TimescaleDB for historical analysis
-- Injected into strategy context via `SignalContext.market_state`
-- Used as features in the confidence model
-- Available for agent-driven research workflows
+### 5.3 Time-Series Forecasting
 
-### 4.3 Time-Series Forecasting
+The TimesFM 2.5 foundation model provides zero-shot return forecasts without task-specific training. The model ingests raw OHLCV time series and produces multi-horizon predictions with prediction intervals.
 
-The TimesFM 2.5 foundation model (Google Research, 2025) provides zero-shot return forecasts without task-specific training. The model ingests raw OHLCV time series and produces multi-horizon predictions that serve as an additional confidence signal.
+This is complementary to tree-based confidence scoring. XGBoost captures cross-sectional patterns (which tickers, under which conditions, at which times). TimesFM captures temporal dynamics (what the price trajectory itself suggests about near-term direction). The two models fail in different ways, which makes their disagreement informative.
 
-Key properties:
+### 5.4 Regime Detection
 
-- No fine-tuning required: works out of the box on any ticker
-- Handles multiple frequencies (1-min intraday through daily)
-- Produces prediction intervals, not just point estimates
-- Complementary to XGBoost: captures temporal dynamics that tree-based models miss
+ML models classify the current market regime (bull, bear, sideways, crisis) using realized volatility percentiles, VIX term structure, cross-asset correlations, and drawdown patterns.
 
-### 4.4 Regime Detection
+Regime classification feeds into both the confidence model and agent decision-making. A signal that scores 0.70 in a trending market may warrant different sizing than the same 0.70 in a crisis regime. But the regime model itself is still a statistical classifier: it can tell you the most likely regime, not whether a regime transition is about to happen.
 
-ML models classify the current market regime (bull, bear, sideways, crisis) using a combination of:
-
-- Realized volatility relative to historical percentiles
-- VIX term structure (contango vs backwardation)
-- Cross-asset correlations (equity-bond, sector dispersion)
-- Drawdown depth and recovery patterns
-
-Regime classification feeds into both the confidence model and agent decision-making. A signal that scores 0.70 in a trending market may warrant different sizing than the same 0.70 in a crisis regime.
-
-### 4.5 Limitations Addressed by Gateway 3
+### 5.5 Limitations Addressed by Gateway 3
 
 ML models are bounded by their training distribution. When market conditions diverge from historical patterns, confidence scores become unreliable without any internal warning mechanism. The models also cannot reason about higher-order questions: Is this signal redundant with another position? Does today's macro calendar change the risk profile? Should we be reducing exposure entirely?
 
@@ -185,244 +168,134 @@ These are judgment calls, not statistical ones. They require the agent gateway.
 
 ---
 
-## 5. Gateway 3: Agent Orchestration
+## 6. Gateway 3: Agent Orchestration
 
-The third gateway introduces AI agents that operate on top of the rule-based and ML layers. Unlike the first two gateways, which are stateless computations, agents maintain context, reason about uncertainty, and make adaptive decisions.
+The third gateway introduces AI agents that operate on top of the rule-based and ML layers. Unlike the first two gateways, which are stateless computations run on every cycle, agents maintain context, reason about uncertainty, and make adaptive decisions.
 
-### 5.1 Agent Architecture
+This is the architectural novelty of Icarus. Agents are not a smarter model. They are a different kind of system that can evaluate models.
+
+### 6.1 Why Agents, Not Better Models
+
+The standard response to ML limitations is to build better ML. More data, more features, more sophisticated architectures. This approach has diminishing returns in trading because the fundamental problem is not model capacity but epistemic uncertainty: the model does not know what it does not know.
+
+An agent can reason about this gap. It can look at a high-confidence ML signal and ask: "The model says 0.82 confidence on this breakout. But the VIX term structure just inverted for the first time in six months. The model was trained on data where this happened twice. Is a sample size of two sufficient to trust this score?"
+
+No amount of model improvement produces this kind of reasoning. It requires a system that can evaluate the conditions under which the model's outputs are trustworthy, which is a meta-cognitive task that sits above the model layer.
+
+### 6.2 Agent Architecture
 
 Icarus integrates two specialized agents built on Claude (Anthropic):
 
-**Quantitative Research Agent** (Claude Opus):
+**Quantitative Research Agent**: Evaluates factor hypotheses with statistical significance testing, tunes strategy parameters based on regime analysis, assesses cross-strategy correlation, and optimizes portfolio construction. Has full access to the Icarus API, market data, and research artifacts.
 
-- Factor hypothesis evaluation with statistical significance testing
-- Strategy parameter tuning based on regime analysis
-- Cross-strategy correlation assessment
-- Portfolio construction optimization
-- Full access to Icarus API endpoints, market data, and research artifacts
+**ML Operations Agent**: Engineers features from raw market data, selects and trains model architectures (PyTorch, CUDA-accelerated), detects model staleness, maintains regime detection models, and computes confidence intervals on all metrics.
 
-**ML Operations Agent** (Claude Opus):
+Both agents operate at the Opus capability tier, which provides the reasoning depth required for quantitative analysis. Weaker models produce analysis that reads plausibly but fails on edge cases, exactly the scenarios where agent judgment matters most.
 
-- Feature engineering from raw market data
-- Model architecture selection and training (PyTorch, CUDA-accelerated)
-- Staleness detection: identifies when models need retraining
-- Regime detection model maintenance
-- Confidence interval computation on all metrics
+### 6.3 Concrete Examples
 
-### 5.2 What Agents Add
+The agent layer's value is clearest in specific scenarios where rules and ML both produce the wrong answer:
 
-Agents provide three capabilities that rules and models cannot:
+**Scenario: Correlated signal accumulation.** The day trading strategy generates long signals on three semiconductor stocks. The ML layer confirms all three with confidence above 0.65. Each signal is individually valid. But the portfolio already holds two semiconductor positions from yesterday's rotation. The agent recognizes that executing all three signals would concentrate 40% of the portfolio in a single sub-sector, violating the spirit of diversification even if each position individually passes the 10% concentration limit. It selects the highest-conviction signal and skips the other two.
 
-**Contextual judgment**: An agent reviewing a high-confidence long signal can check whether earnings are tomorrow, whether the sector is under regulatory scrutiny, or whether the signal is correlated with three other open positions. Rules encode known contexts. Agents reason about novel ones.
+**Scenario: Macro event override.** FOMC minutes are released at 2:00 PM. The pattern scanner fires a VWAP reclaim signal at 2:03 PM on a large-cap name. The ML model assigns 0.71 confidence. Both layers are operating correctly within their scope: the pattern is real, and historically this pattern has been profitable. But the agent knows that the first 30 minutes after FOMC releases have elevated reversal rates. It holds the signal for re-evaluation rather than executing immediately.
 
-**Parameter adaptation**: Strategy parameters (lookback periods, confidence thresholds, position sizing) are typically set during development and rarely updated. Agents continuously evaluate whether current parameters are appropriate for the regime. A research agent might determine that the 0.55 confidence threshold should tighten to 0.65 during a high-volatility period.
+**Scenario: Regime transition detection.** Over two weeks, the VIX creeps from 14 to 22 while the confidence model's aggregate accuracy on recent signals drops from 58% to 49%. Neither the rules nor the ML layer flag this: VIX 22 is not a crisis level, and 49% accuracy is within normal variance for a short window. The research agent, reviewing weekly performance, identifies the pattern: the model is not wrong, but the regime is shifting and the model's training data has limited coverage of this transition zone. It recommends tightening the confidence threshold from 0.55 to 0.65 until accuracy stabilizes.
 
-**Research automation**: Agents conduct systematic research that would otherwise require manual quant effort:
+These examples share a common structure: the agent is not generating a better signal. It is preventing a bad decision that the other layers would have made.
 
-- Generate and test factor hypotheses
-- Run walk-forward backtests with Monte Carlo projections
-- Analyze negative results (strategies that should have worked but did not)
-- Produce daily market assessments (regime, risk, opportunities)
-- Evaluate smart money signals in context
+### 6.4 Agent Workflows
 
-### 5.3 Agent Workflows
-
-Icarus exposes 17 agent-driven workflows for trading operations:
-
-| Category              | Workflows                                                                    |
-| --------------------- | ---------------------------------------------------------------------------- |
-| **Research**          | Ticker deep-dive, hypothesis testing, factor evaluation                      |
-| **Market Assessment** | Pre-market analysis, market report, regime classification, weekly review     |
-| **Risk**              | Risk check (VaR/CVaR/drawdown), smart money analysis, Monte Carlo projection |
-| **Portfolio**         | Portfolio status, strategy listing, universe review                          |
-| **Execution**         | Strategy deployment (with safety gates), bull/bear debate generation         |
+Icarus exposes 17 agent-driven workflows covering research (ticker deep-dives, hypothesis testing, factor evaluation), market assessment (pre-market analysis, regime classification, weekly review), risk analysis (VaR/CVaR checks, smart money analysis, Monte Carlo projections), portfolio management (status, strategy listing, universe review), and execution (strategy deployment with safety gates, bull/bear debate generation).
 
 Each workflow is a structured prompt that gives the agent access to relevant API endpoints, historical data, and the current portfolio state. The agent produces analysis, recommendations, or actions depending on the workflow.
 
-### 5.4 Approval Gates
+### 6.5 Approval Gates
 
 Not all agent actions are autonomous. Icarus enforces a CIO (Chief Investment Officer) approval hierarchy:
 
-**Autonomous** (no approval needed):
+**Autonomous** (no approval needed): Research, backtests, factor analysis, data retrieval, market reports, regime assessments, risk metric computation.
 
-- Research, backtests, factor analysis, data retrieval
-- Market reports and regime assessments
-- Risk metric computation
+**Requires approval**: Deploy strategy to paper or live trading, modify risk limits or position sizing parameters, activate kill switch, change strategy parameters on active deployments.
 
-**Requires approval**:
+This separation is deliberate. The agent layer's greatest value is in research and evaluation, tasks where speed and breadth matter and the cost of a wrong conclusion is low (you just ignore it). Capital allocation decisions have irreversible consequences and benefit from human judgment. The approval gate ensures agents amplify human decision-making rather than replacing it.
 
-- Deploy strategy to paper or live trading
-- Modify risk limits or position sizing parameters
-- Activate kill switch
-- Change strategy parameters on active deployments
+### 6.6 The Composition Effect
 
-This separation ensures agents can research freely while preserving human oversight over capital allocation decisions.
+The three gateways are most powerful in combination. Consider the full pipeline:
 
-### 5.5 The Composition Effect
-
-The three gateways are most powerful in combination:
-
-1. Rule-based strategies scan the universe and generate 50 candidate signals
-2. ML confidence filtering reduces this to 12 high-conviction signals
-3. An agent reviews the 12 signals against current regime, portfolio state, macro calendar, and cross-correlation, selecting 4 for execution
+1. Rule-based strategies scan the universe and generate ~50 candidate signals
+2. ML confidence filtering reduces this to ~12 high-conviction signals
+3. An agent reviews the 12 signals against current regime, portfolio state, macro calendar, and cross-correlation, selecting ~4 for execution
 4. The risk engine validates that these 4 signals do not breach any limits
 5. The execution engine sizes and routes the orders
 
-Each layer reduces noise while preserving signal. The agent gateway's value is highest when it overrides: preventing a trade that rules and ML both approved but that context makes inadvisable, or escalating a marginal signal that confluence data strongly supports.
+Each layer reduces noise while preserving signal. Crucially, the reduction at each stage is qualitatively different: rules filter by pattern, ML filters by probability, agents filter by context. This means the errors at each stage are uncorrelated, which is the same insight behind ensemble methods in ML but applied at the architectural level.
 
 ---
 
-## 6. Risk Controls
+## 7. Risk Controls
 
 Risk management in Icarus is not a gateway. It is a constraint layer with unconditional veto power that operates independently of all three gateways. No signal, regardless of confidence or agent approval, can bypass the risk engine.
 
-### 6.1 Limit Structure
+This separation is intentional. The gateways are about making good decisions. The risk engine is about surviving bad ones. Mixing the two creates a system that negotiates with its own risk limits, which is how blowups happen.
 
-| Limit               | Threshold          | Scope                         |
-| ------------------- | ------------------ | ----------------------------- |
-| Max single position | 10% of portfolio   | Per-ticker concentration      |
-| Max sector exposure | 30% of portfolio   | GICS sector                   |
-| Max gross exposure  | 200% of portfolio  | Total long + short            |
-| Max net exposure    | 50% of portfolio   | Long minus short              |
-| Daily loss limit    | 2% of portfolio    | Resets at market open         |
-| Max drawdown        | 10% peak-to-trough | Circuit breaker (kill switch) |
-| VaR (95%)           | 3% daily           | Tail risk                     |
-| Correlation warning | 80% pairwise       | Diversification               |
+### 7.1 Limit Structure
 
-### 6.2 Multi-Layer Enforcement
+Limits are enforced on concentration (per-ticker and per-sector), leverage (gross and net exposure), drawdown (daily loss and peak-to-trough), and tail risk (VaR at the 95th percentile). Each limit has a hard threshold that cannot be exceeded and an alert threshold at 80% that triggers early warnings.
 
-Risk limits are enforced at four levels:
+### 7.2 Multi-Layer Enforcement
+
+Risk limits are enforced at four independent levels:
 
 1. **Execution Engine**: Position sizing caps prevent oversized orders before they reach the broker
-2. **Risk Engine**: Real-time computation of VaR, CVaR, drawdown, and exposure metrics. Every signal passes through `check_signal()` before execution.
+2. **Risk Engine**: Real-time VaR, CVaR, drawdown, and exposure computation. Every signal passes through validation before execution.
 3. **Deployment Config**: Per-strategy daily loss limits, maximum concurrent positions, and no-overnight flags
-4. **Runner**: End-of-day flatten at 3:55 PM ET for day trading deployments, startup flatten for positions held across restarts, and a manual kill switch for emergencies
+4. **Runner**: End-of-day flatten for day trading deployments, startup flatten for positions held across restarts, and a manual kill switch
 
-### 6.3 Kill Switch
+The redundancy is deliberate. Any single layer can fail (a bug, a race condition, a misconfiguration). Four independent layers make simultaneous failure extremely unlikely.
 
-The kill switch immediately flattens all positions across all deployments. It can be triggered:
+### 7.3 Kill Switch
 
-- **Automatically**: When max drawdown (10%) is breached
-- **Automatically**: When daily loss limit (2%) is hit per-deployment
-- **Automatically**: On data source failure or broker disconnection
-- **Manually**: Via the Control Room UI or agent command
+The kill switch immediately flattens all positions across all deployments. It triggers automatically on max drawdown breach, per-deployment daily loss limit, data source failure, or broker disconnection. It can also be activated manually via the Control Room UI or an agent command.
 
 Kill switch activation is logged and cannot be overridden by any gateway.
 
 ---
 
-## 7. Portfolio Construction
+## 8. Portfolio Construction
 
 Between signal approval and order execution, Icarus applies portfolio-level optimization to determine position sizing and allocation.
 
-### 7.1 Optimization Methods
+### 8.1 Optimization Methods
 
-Six methods are available, selected per-deployment:
+Six methods are available, selected per-deployment based on the strategy's characteristics:
 
-**Equal-Weight**: Baseline allocation. Each approved signal receives equal capital. Simple, transparent, minimal assumptions.
+**Equal-Weight**: Baseline. Each approved signal receives equal capital. Minimal assumptions, maximum transparency.
 
-**Risk Parity**: Weight inversely proportional to volatility. Each position contributes approximately equal risk to the portfolio.
+**Risk Parity**: Weight inversely proportional to volatility so each position contributes approximately equal risk.
 
-$$w_i = \frac{1/\sigma_i}{\sum_{j=1}^{N} 1/\sigma_j}$$
+**Mean-Variance (Markowitz)**: Maximize Sharpe ratio given expected returns and covariance. Analytical tangency portfolio solution.
 
-**Mean-Variance (Markowitz)**: Maximize Sharpe ratio given expected returns and covariance. Analytical solution via the tangency portfolio.
+**Black-Litterman**: Blends market equilibrium returns with signal-derived views. This is where the three-gateway architecture creates a natural integration: ML confidence from Gateway 2 maps directly to the view uncertainty parameter (Omega). High-confidence signals produce tight views that pull the portfolio toward them. Low-confidence signals produce wide views that defer to equilibrium.
 
-**Black-Litterman**: Blends market equilibrium returns with signal-derived views. View confidence from Gateway 2 maps directly to the uncertainty parameter Omega, creating a natural integration between ML confidence and portfolio construction.
+**Minimum Variance**: Minimize portfolio volatility without return assumptions. Useful in uncertain regimes where return forecasts are unreliable, which is precisely when an agent might select this method over mean-variance.
 
-$$\mu_{BL} = \mu_{eq} + \tau\Sigma P^T (P\tau\Sigma P^T + \Omega)^{-1} (Q - P\mu_{eq})$$
+**Mean-CVaR (Conditional Value-at-Risk)**: Minimize tail risk using the Rockafellar-Uryasev linear programming formulation. CVaR (expected shortfall) is a coherent risk measure that accounts for the magnitude of losses beyond the confidence threshold, not just the probability of exceeding it. Solved via CVXPY with the CLARABEL solver.
 
-**Minimum Variance**: Minimize portfolio volatility without return assumptions. Useful in uncertain regimes where return forecasts are unreliable.
+### 8.2 Execution Pipeline
 
-**Mean-CVaR (Conditional Value-at-Risk)**: Minimize tail risk using the Rockafellar-Uryasev linear programming formulation. Solved via CVXPY with the CLARABEL solver. Risk aversion is auto-scaled relative to asset volatility so that a lambda of 1.0 means return and tail risk are weighted equally.
+Position sizing flows through four stages: the portfolio optimizer determines target weights, the execution engine converts weights to share quantities, the cost model estimates commissions and slippage, and the broker receives the order.
 
-### 7.2 Constraints
-
-All optimization methods respect hard constraints:
-
-| Constraint                 | Value        |
-| -------------------------- | ------------ |
-| Position weight bounds     | -10% to +10% |
-| Sector weight cap          | 30%          |
-| Gross exposure             | 200%         |
-| Net exposure               | 50%          |
-| Max turnover per rebalance | 50%          |
-| Position count             | 5 to 30      |
-
-### 7.3 Execution
-
-Position sizing flows through a pipeline:
-
-1. **Portfolio optimizer** determines target weights
-2. **Execution engine** converts weights to share quantities
-3. **Cost model** estimates commissions (tiered IBKR schedule) and slippage (linear market impact)
-4. **Broker** receives the order (Alpaca for execution, Interactive Brokers for monitoring)
-
-Broker positions are the source of truth. The system reconciles against broker state every cycle rather than maintaining its own position ledger.
+Broker positions are the source of truth. The system reconciles against broker state every cycle rather than maintaining its own position ledger. This eliminates an entire class of reconciliation bugs where local state drifts from reality due to partial fills, network failures, or manual intervention.
 
 ---
 
-## 8. Benchmarks
+## 9. Open Source and Extensibility
 
-To evaluate the contribution of each gateway, we compare four configurations using standardized metrics across representative market conditions.
+Icarus is released under the Apache 2.0 license. The complete framework is open source: strategy plugin interface, all nine engines (risk, execution, portfolio optimization, backtest, confluence, strategy loading, cost model, sensitivity, quantum), the runner and worker daemons, the Control Room UI (React 19), agent definitions, and the full Docker Compose stack.
 
-### 8.1 Methodology
-
-**Backtest framework**: Walk-forward testing with expanding window. Training period: 2020-2024. Out-of-sample: 2024-2025. Monthly re-estimation.
-
-**Cost assumptions**: IBKR tiered commissions, linear slippage model (0.05% per trade), no borrowing costs for short positions.
-
-**Universe**: US large-cap equities (S&P 500 constituents), screened for minimum liquidity ($10M average daily volume).
-
-**Risk budget**: 2% fixed fractional sizing, 10% max position, 30% max sector.
-
-### 8.2 Configuration Comparison
-
-| Metric           | Rules Only | Rules + ML | Rules + ML + Agent | Benchmark (SPY) |
-| ---------------- | ---------- | ---------- | ------------------ | --------------- |
-| Annual Return    | 12.4%      | 15.8%      | 19.2%              | 10.1%           |
-| Sharpe Ratio     | 0.68       | 0.94       | 1.31               | 0.52            |
-| Max Drawdown     | -18.3%     | -14.1%     | -9.7%              | -24.5%          |
-| Win Rate         | 51.2%      | 56.8%      | 61.4%              | N/A             |
-| Profit Factor    | 1.24       | 1.52       | 1.89               | N/A             |
-| Daily VaR (95%)  | -2.1%      | -1.7%      | -1.2%              | -2.4%           |
-| Monthly Turnover | 340%       | 220%       | 160%               | N/A             |
-
-### 8.3 Key Observations
-
-**ML filtering reduces noise**: Adding Gateway 2 improved the Sharpe ratio from 0.68 to 0.94 primarily by filtering out low-conviction signals. Win rate increased 5.6 percentage points while turnover dropped 35%. The ML layer is a precision filter, not a return generator.
-
-**Agents reduce drawdowns**: The most significant agent contribution is risk-adjusted performance. Maximum drawdown dropped from -14.1% to -9.7%, a 31% reduction. Agents achieved this by:
-
-- Reducing position sizes during detected regime transitions
-- Avoiding correlated signals that rules and ML both approved
-- Tightening confidence thresholds when VIX term structure inverted
-- Skipping signals on days with major macro events (FOMC, CPI)
-
-**Turnover compression**: Each successive gateway reduces unnecessary trading. Rules generate broadly, ML filters for conviction, agents filter for context. Monthly turnover dropped from 340% (rules only) to 160% (full stack), reducing transaction costs by approximately 47%.
-
-**Regime-dependent alpha**: The agent gateway's outperformance is concentrated in transitional periods (Q4 2024, Q1 2025) when market character shifted. In stable trending markets, the three-gateway system performs comparably to rules + ML. The agent layer's value is in drawdown avoidance and regime adaptation, not steady-state alpha generation.
-
-### 8.4 Limitations
-
-These benchmarks use representative parameters and generic market data. Individual strategy performance depends on universe selection, parameter calibration, and the specific agent workflows configured. Walk-forward backtests inherently assume that past regime transitions predict future ones. Live paper trading results should be evaluated before deploying capital.
-
----
-
-## 9. Open Source
-
-Icarus is released under the Apache 2.0 license. The framework, including all three gateways, the risk engine, portfolio optimizer, execution pipeline, and Control Room UI, is open source.
-
-### 9.1 What is Open
-
-- Strategy plugin interface (`BaseStrategy`)
-- All nine engines (risk, execution, portfolio optimization, backtest, confluence, strategy loading, cost model, sensitivity, quantum)
-- Runner daemon with multi-coroutine orchestration
-- Worker daemon (data ingestion, FinBERT sentiment, TimescaleDB writer)
-- Control Room UI (React 19, real-time WebSocket)
-- Agent definitions and workflow templates
-- Docker Compose stack (FastAPI, TimescaleDB, Redis, IB Gateway, UI)
-
-### 9.2 Extending Icarus
+### 9.1 Extending Icarus
 
 Adding a new strategy requires implementing one Python class:
 
@@ -444,7 +317,6 @@ class MyStrategy(BaseStrategy):
         )]
 
     def compute_signals(self, universe, as_of, context=None):
-        # Your signal logic here
         return [Signal(
             ticker="AAPL",
             direction="long",
@@ -453,19 +325,17 @@ class MyStrategy(BaseStrategy):
         )]
 ```
 
-Place the file in `api/strategies/` or a configured plugin directory. The strategy engine discovers and loads it automatically on next startup.
+Place the file in `api/strategies/` or a configured plugin directory. The strategy engine discovers and loads it on next startup.
 
-### 9.3 Architecture Decisions
+### 9.2 Key Architecture Decisions
 
-Several design choices reflect lessons learned during development:
+**Broker as source of truth**: Position state is always fetched from the broker, never reconstructed from local order history.
 
-**Broker as source of truth**: Position state is always fetched from the broker, never reconstructed from local order history. This eliminates an entire class of reconciliation bugs.
+**Independent coroutines with fault isolation**: The runner's four loops (execution, snapshots, flatten, VIX) run concurrently with independent error handling. One loop failing does not crash the others.
 
-**Independent coroutines with fault isolation**: The runner's four loops (execution, snapshots, flatten, VIX) run in `asyncio.gather(return_exceptions=True)`. One loop failing does not crash the others.
+**Risk outside the signal path**: The risk engine evaluates the full portfolio context, not individual signals in isolation. It has veto power, not advisory power.
 
-**Risk outside the signal path**: The risk engine is not a gateway that signals pass through. It is a constraint layer with veto power that evaluates the full portfolio context, not individual signals in isolation.
-
-**CVaR over VaR**: Portfolio optimization uses Conditional Value-at-Risk (expected shortfall) rather than Value-at-Risk for tail risk measurement. CVaR is a coherent risk measure that accounts for the magnitude of losses beyond the confidence threshold, not just the probability of exceeding it.
+**CVaR over VaR**: Portfolio optimization uses Conditional Value-at-Risk rather than Value-at-Risk for tail risk measurement because CVaR is subadditive (diversification always reduces it) and captures loss magnitude, not just probability.
 
 ---
 
@@ -475,21 +345,11 @@ The three-gateway architecture provides a framework for combining the strengths 
 
 Rules provide coverage and speed. ML provides statistical filtering. Agents provide judgment and adaptation. Risk controls provide hard boundaries that no layer can override.
 
-The system is designed for composition, not replacement. Each gateway can operate independently with meaningful results. Adding layers compounds performance primarily through noise reduction and drawdown avoidance rather than raw return generation.
+The system is designed for composition, not replacement. Each gateway can operate independently with meaningful results. Adding layers compounds performance primarily through noise reduction and drawdown avoidance rather than raw return generation. The errors at each layer are qualitatively different and therefore uncorrelated, which makes the combined system more robust than any individual layer regardless of how sophisticated that layer becomes.
 
-Icarus demonstrates that the most impactful use of AI agents in quantitative trading is not signal generation but meta-cognition: the ability to evaluate whether a system's outputs should be trusted given current conditions.
-
----
-
-## References
-
-1. Rockafellar, R.T. and Uryasev, S. (2000). "Optimization of Conditional Value-at-Risk." Journal of Risk, 2(3), 21-42.
-2. Black, F. and Litterman, R. (1992). "Global Portfolio Optimization." Financial Analysts Journal, 48(5), 28-43.
-3. Das, A. et al. (2024). "A decoder-only foundation model for time-series forecasting." International Conference on Machine Learning.
-4. Araci, D. (2019). "FinBERT: Financial Sentiment Analysis with Pre-trained Language Models." arXiv:1908.10063.
-5. Marcos Lopez de Prado (2018). "Advances in Financial Machine Learning." Wiley.
-6. Anthropic (2025). "Claude: A family of AI assistants." Technical documentation.
+Icarus demonstrates that the most impactful use of AI agents in quantitative trading is not signal generation but meta-cognition: the ability to evaluate whether a system's outputs should be trusted given current conditions. When markets are stable and regime is clear, rules and ML are sufficient. When conditions are ambiguous, transitional, or unprecedented, the agent layer's judgment becomes the margin between a controlled drawdown and an uncontrolled one.
 
 ---
 
-_Icarus is developed by Venture Chain. Source code available at github.com/Venture-Chain/icarus._
+*Icarus is developed by Venture Chain. Source code available at github.com/Venture-Chain/icarus.*
+*For questions, contact research@venturechain.co.*
